@@ -86,7 +86,7 @@ def main() -> None:
         media.close()
         sys.exit(0)
 
-    # ── Head orientation + nodding (Stage 3) ─────────────────────────────────
+    # ── Head orientation + nodding / eye contact (Stage 3) ───────────────────
     _head_client = None
     _nod         = None
     if _EMBODY:
@@ -94,7 +94,11 @@ def main() -> None:
             print("Orienting head …")
             _head_client = _embody.connect_head()
             _embody.orient_head(_head_client)
-            _nod = _embody.NodThread(_head_client)
+            if _embody._MEDIAPIPE:
+                print("Eye contact tracking enabled (mediapipe).")
+                _nod = _embody.EyeContactThread(_head_client, media.get_frame)
+            else:
+                _nod = _embody.NodThread(_head_client)
             _nod.start()
         except Exception as exc:
             print(f"Head control skipped: {exc}")

@@ -41,7 +41,7 @@ MIN_SPEECH_BEFORE_STOP = 2.0   # don't auto-stop until this much speech has accu
 
 # Rolling noise-floor estimation
 NOISE_WINDOW_S  = 3.0   # look back this far to estimate the floor
-SPEECH_RATIO    = 3.5   # threshold = noise_floor * this
+SPEECH_RATIO    = 6.0   # threshold = noise_floor * this
                         # raise (e.g. 5.0) if auto-stop fires mid-sentence
 MIN_THRESHOLD   = 0.001 # absolute floor so near-silent rooms still work
 

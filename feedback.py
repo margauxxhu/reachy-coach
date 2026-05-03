@@ -17,8 +17,8 @@ Requires:
 
 import json
 import os
+import subprocess
 import sys
-import urllib.request
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -49,8 +49,10 @@ Rules:
 - "what_worked": one specific thing that was genuinely effective, with evidence \
 from the transcript. If nothing stands out, say what was merely adequate. \
 2–3 sentences max.
-- "improve": exactly one sentence. Name the problem and quote the exact words \
-from the transcript that illustrate it.
+- "improve": exactly one sentence. Mentor-style: acknowledge what's almost \
+working, then name the one specific thing to fix, quoting the exact words from \
+the transcript that illustrate it. Honest and direct, but leaves the speaker \
+feeling capable, not deflated.
 - "drill": exactly one sentence. A concrete, time-bounded exercise doable alone \
 before the next session. Not generic advice like "practice pausing."
 - Never use phrases like "great job", "well done", "good effort", or any \
@@ -122,11 +124,13 @@ def post_discord(session: dict) -> None:
             {"name": "Drill", "value": fb["drill"], "inline": False}
         )
 
-    data = json.dumps(payload).encode()
-    req  = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    subprocess.run(
+        ["curl", "-s", "-X", "POST", url,
+         "-H", "Content-Type: application/json",
+         "-d", json.dumps(payload)],
+        check=True,
+        timeout=10,
     )
-    urllib.request.urlopen(req, timeout=10)
 
 
 def get_latest_session() -> Path:

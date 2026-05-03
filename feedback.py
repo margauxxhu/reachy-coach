@@ -16,7 +16,9 @@ Requires:
 """
 
 import json
+import os
 import sys
+import urllib.request
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -80,6 +82,53 @@ Metrics:
 """
 
 
+def post_discord(session: dict) -> None:
+    """Post a session summary embed to Discord via webhook."""
+    url = os.getenv("DISCORD_WEBHOOK_URL", "")
+    if not url:
+        return
+
+    m  = session["metrics"]
+    fb = session.get("feedback", {})
+    fillers = (
+        ", ".join(f"{k} ×{v}" for k, v in m["filler_words"].items())
+        or "none"
+    )
+
+    payload = {
+        "embeds": [{
+            "title": f"Speech Coach · {session['timestamp'][:10]}",
+            "color": 0x7B68EE,
+            "fields": [
+                {"name": "Duration", "value": f"{m['duration_s']}s",              "inline": True},
+                {"name": "WPM",      "value": f"{m['wpm']} (target 130–180)",     "inline": True},
+                {"name": "Fillers",  "value": f"{m['filler_count']} ({m['filler_rate_pct']}%) — {fillers}", "inline": False},
+                {"name": "Vocab",    "value": f"{m['vocab_diversity_pct']}%",     "inline": True},
+                {"name": "Pauses",   "value": str(m["pause_count"]),              "inline": True},
+            ],
+        }]
+    }
+
+    if fb.get("what_worked"):
+        payload["embeds"][0]["fields"].append(
+            {"name": "What worked", "value": fb["what_worked"], "inline": False}
+        )
+    if fb.get("improve"):
+        payload["embeds"][0]["fields"].append(
+            {"name": "Improve", "value": fb["improve"], "inline": False}
+        )
+    if fb.get("drill"):
+        payload["embeds"][0]["fields"].append(
+            {"name": "Drill", "value": fb["drill"], "inline": False}
+        )
+
+    data = json.dumps(payload).encode()
+    req  = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    urllib.request.urlopen(req, timeout=10)
+
+
 def get_latest_session() -> Path:
     sessions_dir = Path("sessions")
     files = sorted(sessions_dir.glob("*.json"))
@@ -138,6 +187,14 @@ def main() -> None:
         embody.speak_feedback(feedback)
     except Exception as exc:
         print(f"TTS skipped: {exc}")
+
+    # ── Discord notification ──────────────────────────────────────────────────
+    try:
+        post_discord(session)
+        if os.getenv("DISCORD_WEBHOOK_URL"):
+            print("Discord notification sent.")
+    except Exception as exc:
+        print(f"Discord skipped: {exc}")
 
 
 if __name__ == "__main__":

@@ -78,6 +78,20 @@ Key constants at the top of each file:
 
 ---
 
+## Discord notifications (optional)
+
+After each session `feedback.py` posts a summary embed to a Discord channel if a webhook URL is set.
+
+1. In Discord: open a channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy URL
+2. Add to `.env`:
+   ```
+   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+   ```
+
+The embed includes duration, WPM, filler count, vocab diversity, and the full coaching feedback. If the variable is not set, the step is silently skipped.
+
+---
+
 ## Gotchas
 
 - **Venv**: always activate `~/reachy_mini_env` before running anything

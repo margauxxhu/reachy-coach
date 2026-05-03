@@ -21,6 +21,12 @@ import numpy as np
 
 from reachy_mini.media.media_manager import MediaManager, MediaBackend
 
+try:
+    import embody as _embody
+    _EMBODY = True
+except ImportError:
+    _EMBODY = False
+
 # Suppress known-harmless SDK messages (no USB DoA device on macOS, no camera needed)
 logging.getLogger("reachy_mini.media.audio_control_utils").setLevel(logging.CRITICAL)
 logging.getLogger("reachy_mini.media.webrtc_client_gstreamer").setLevel(logging.CRITICAL)
@@ -80,6 +86,21 @@ def main() -> None:
         media.close()
         sys.exit(0)
 
+    # ── Head orientation + nodding (Stage 3) ─────────────────────────────────
+    _head_client = None
+    _nod         = None
+    if _EMBODY:
+        try:
+            print("Orienting head …")
+            _head_client = _embody.connect_head()
+            _embody.orient_head(_head_client)
+            _nod = _embody.NodThread(_head_client)
+            _nod.start()
+        except Exception as exc:
+            print(f"Head control skipped: {exc}")
+            _head_client = None
+            _nod         = None
+
     print(f"Recording …  (Ctrl+C or {SILENCE_DURATION:.0f} s of silence to stop)\n")
 
     chunks        = []
@@ -110,6 +131,9 @@ def main() -> None:
 
         is_speech = level > silence_threshold
 
+        if _nod is not None:
+            _nod.set_speech(is_speech)
+
         if is_speech:
             speech_duration += chunk_duration
             silence_start = None
@@ -128,6 +152,15 @@ def main() -> None:
     print()
     media.stop_recording()
     media.close()
+
+    if _nod is not None:
+        _nod.stop()
+        _nod.join(timeout=1.0)
+        try:
+            _embody.return_head(_head_client)
+        except Exception:
+            pass
+        _head_client.disconnect()
 
     if not chunks:
         print("No audio captured.")

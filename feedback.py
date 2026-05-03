@@ -45,14 +45,14 @@ Respond with valid JSON only — no markdown, no commentary outside the JSON:
 
 Rules:
 - "what_worked": one specific thing that was genuinely effective, with evidence \
-from the transcript. If nothing stands out, say what was merely adequate.
-- "improve": the single highest-leverage thing to fix. Quote the exact words \
-from the transcript that illustrate the problem.
-- "drill": one concrete exercise to do before the next session — specific, \
-time-bounded, doable alone. Not generic advice like "practice pausing."
+from the transcript. If nothing stands out, say what was merely adequate. \
+2–3 sentences max.
+- "improve": exactly one sentence. Name the problem and quote the exact words \
+from the transcript that illustrate it.
+- "drill": exactly one sentence. A concrete, time-bounded exercise doable alone \
+before the next session. Not generic advice like "practice pausing."
 - Never use phrases like "great job", "well done", "good effort", or any \
 variant of empty praise.
-- 2–3 sentences per field maximum.
 """
 
 
@@ -130,6 +130,14 @@ def main() -> None:
     session["feedback"] = feedback
     session_path.write_text(json.dumps(session, indent=2))
     print(f"Feedback saved → {session_path}")
+
+    # ── Speak feedback via robot speaker (Stage 3) ────────────────────────────
+    try:
+        import embody
+        print("Speaking improve + drill via robot speaker …")
+        embody.speak_feedback(feedback)
+    except Exception as exc:
+        print(f"TTS skipped: {exc}")
 
 
 if __name__ == "__main__":

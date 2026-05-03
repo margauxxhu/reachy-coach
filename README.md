@@ -66,7 +66,7 @@ Key constants at the top of each file:
 
 | File | Constant | Default | Effect |
 |---|---|---|---|
-| `capture_audio.py` | `SPEECH_RATIO` | `3.5` | Raise if auto-stop fires mid-sentence |
+| `capture_audio.py` | `SPEECH_RATIO` | `6.0` | Raise if auto-stop fires mid-sentence |
 | `capture_audio.py` | `SILENCE_DURATION` | `3.0 s` | Quiet time before auto-stop |
 | `analyze.py` | `MODEL_SIZE` | `base.en` | Switch to `small.en` for better accuracy |
 | `embody.py` | `NOD_AMP_DEG` | `6.0` | Head nod amplitude (degrees) |

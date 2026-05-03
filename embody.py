@@ -63,8 +63,8 @@ DAEMON_PORT = 8000
 
 # Positive Y-axis rotation = nose tilts downward (matches SLEEP_HEAD_POSE in SDK).
 LISTEN_PITCH_DEG = 10.0   # resting "attentive" tilt during recording
-NOD_AMP_DEG      = 12.0   # ± degrees oscillation around resting pitch
-NOD_PERIOD_S     = 1.5    # seconds per full nod cycle
+NOD_AMP_DEG      = 6.0    # ± degrees oscillation around resting pitch
+NOD_PERIOD_S     = 2.0    # seconds per full nod cycle
 NOD_HZ           = 20     # control loop rate
 
 # Antennas — [right_angle, left_angle] in radians.
@@ -73,7 +73,7 @@ NOD_HZ           = 20     # control loop rate
 NEUTRAL_ANTENNAS = [-0.1745, 0.1745]   # SDK INIT_ANTENNAS_JOINT_POSITIONS
 LISTEN_ANTENNAS  = [0.0, 0.0]          # upright/attentive
 ANT_AMP          = 0.45                # waggle amplitude in radians (~26°)
-ANT_PERIOD_S     = 2.0                 # waggle period (different from nod for organic feel)
+ANT_PERIOD_S     = 3.5                 # waggle period (different from nod for organic feel)
 
 # Eye contact tracking
 EYE_HZ          = 10       # control loop rate for face tracking

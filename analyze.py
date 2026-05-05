@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""
-Stage 1b — Transcribe a WAV file and print speaking metrics.
-
-Can be run independently on any 16 kHz mono WAV file — no robot needed.
+"""Transcribe a WAV file and compute speaking metrics.
 
 Usage:
-    python analyze.py              # uses recording.wav
-    python analyze.py my_take.wav  # any WAV file
+    python analyze.py                          # recording.wav, English
+    python analyze.py --language fr            # recording.wav, French
+    python analyze.py my_take.wav --language zh
 
 Requires:
     pip install faster-whisper
 """
 
+import argparse
 import json
 import re
 import sys
@@ -22,207 +21,256 @@ from pathlib import Path
 
 import numpy as np
 
-# ── Configuration ────────────────────────────────────────────────────────────
-WAV_FILE   = sys.argv[1] if len(sys.argv) > 1 else "recording.wav"
-MODEL_SIZE = "base.en"   # "small.en" for better accuracy (~460 MB, ~3x slower)
-                         # Change to "small.en" if filler words are being missed.
+# ── Language config ───────────────────────────────────────────────────────────
 
-# Filler patterns — all matched case-insensitively on stripped tokens
-SINGLE_FILLERS         = {"um", "uh", "like"}
-PHRASE_FILLERS         = [("you", "know")]   # consecutive word pairs
-SENTENCE_START_FILLERS = {"so"}              # counted only at a sentence boundary
+LANGUAGE_CONFIG: dict[str, dict] = {
+    "en": {
+        "model":                  "base.en",
+        "single_fillers":         {"um", "uh", "like"},
+        "phrase_fillers":         [("you", "know")],
+        "sentence_start_fillers": {"so"},
+        "pace_unit":              "wpm",
+        "pace_low":               130,
+        "pace_high":              180,
+    },
+    "fr": {
+        "model":                  "base",
+        "single_fillers":         {"euh", "ben", "bah", "genre", "voilà"},
+        "phrase_fillers":         [("du", "coup"), ("en", "fait")],
+        "sentence_start_fillers": {"donc", "alors"},
+        "pace_unit":              "wpm",
+        "pace_low":               130,
+        "pace_high":              180,
+    },
+    "zh": {
+        "model":                  "base",
+        "single_fillers":         {"那个", "就是", "然后", "嗯", "这个"},
+        "phrase_fillers":         [],
+        "sentence_start_fillers": {"所以", "然后"},
+        "pace_unit":              "cpm",
+        "pace_low":               200,
+        "pace_high":              350,
+    },
+}
 
-PAUSE_THRESHOLD = 0.5   # seconds; gaps shorter than this are normal rhythm
-TOP_N_PAUSES    = 5     # how many longest pauses to display
+PAUSE_THRESHOLD = 0.5
+TOP_N_PAUSES    = 5
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-def strip_punct(text: str) -> str:
-    """Lowercase and remove all punctuation except apostrophes."""
-    return re.sub(r"[^a-z']", "", text.lower())
+def _strip(text: str, lang: str) -> str:
+    """Normalise a word token for filler matching."""
+    if lang == "zh":
+        return re.sub(r"[^一-鿿㐀-䶿]", "", text)
+    return re.sub(r"[^\w']", "", text.lower(), flags=re.UNICODE).strip("_")
 
 
-def ends_sentence(word_text: str) -> bool:
-    """True if word ends with terminal punctuation as Whisper attaches it."""
+def _ends_sentence(word_text: str, lang: str) -> bool:
+    if lang == "zh":
+        return word_text.rstrip().endswith(("。", "？", "！"))
     return word_text.rstrip().endswith((".", "?", "!"))
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+def _cjk_count(text: str) -> int:
+    return len(re.findall(r"[一-鿿㐀-䶿]", text))
 
-def analyze(wav_path: str) -> None:
+
+# ── Core computation ──────────────────────────────────────────────────────────
+
+def _compute(wav_path: str, language: str) -> dict:
+    """Transcribe wav_path and return a session dict. Shared by analyze() and run_analysis()."""
+    cfg  = LANGUAGE_CONFIG[language]
+    path = Path(wav_path)
+
+    from faster_whisper import WhisperModel
+    model = WhisperModel(cfg["model"], device="cpu", compute_type="int8")
+
+    with wave.open(wav_path, "r") as wf:
+        raw = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+    audio = raw.astype(np.float32) / 32768.0
+    peak  = float(np.abs(audio).max())
+    if peak > 0:
+        audio = audio / peak * 0.7
+
+    segments, _ = model.transcribe(
+        audio,
+        word_timestamps=True,
+        language=language,
+        vad_filter=True,
+    )
+    words = [w for seg in segments if seg.words for w in seg.words]
+    if not words:
+        return {}
+
+    transcript     = " ".join(w.word for w in words).strip()
+    total_duration = words[-1].end
+    word_count     = len(words)
+
+    # ── Pace ─────────────────────────────────────────────────────────────────
+    if cfg["pace_unit"] == "cpm":
+        pace_value = _cjk_count(transcript) / (total_duration / 60) if total_duration > 0 else 0
+    else:
+        pace_value = word_count / (total_duration / 60) if total_duration > 0 else 0
+
+    # ── Vocab diversity ───────────────────────────────────────────────────────
+    tokens          = [t for t in (_strip(w.word, language) for w in words) if t]
+    unique_count    = len(set(tokens))
+    vocab_diversity = unique_count / len(tokens) if tokens else 0.0
+
+    # ── Filler detection ──────────────────────────────────────────────────────
+    filler_hits: list[tuple[float, str]] = []
+    seen: set[int] = set()
+
+    for i, w in enumerate(words):
+        t = _strip(w.word, language)
+
+        matched_phrase = False
+        for phrase in cfg["phrase_fillers"]:
+            end = i + len(phrase)
+            if end <= len(words):
+                pair = tuple(_strip(words[i + j].word, language) for j in range(len(phrase)))
+                if pair == phrase and i not in seen:
+                    filler_hits.append((w.start, " ".join(phrase)))
+                    seen.update(range(i, end))
+                    matched_phrase = True
+                    break
+        if matched_phrase or i in seen:
+            continue
+
+        if t in cfg["single_fillers"]:
+            filler_hits.append((w.start, t))
+        elif t in cfg["sentence_start_fillers"]:
+            if i == 0 or _ends_sentence(words[i - 1].word, language):
+                filler_hits.append((w.start, t))
+
+    filler_counts = Counter(label for _, label in filler_hits)
+    total_fillers = sum(filler_counts.values())
+    filler_rate   = (total_fillers / word_count * 100) if word_count else 0
+
+    # ── Pauses ────────────────────────────────────────────────────────────────
+    pauses: list[tuple[float, str, str]] = []
+    for i in range(1, len(words)):
+        gap = words[i].start - words[i - 1].end
+        if gap >= PAUSE_THRESHOLD:
+            pauses.append((gap, words[i - 1].word.strip(), words[i].word.strip()))
+    pauses.sort(reverse=True)
+
+    metrics: dict = {
+        "duration_s":          round(total_duration, 1),
+        "word_count":          word_count,
+        cfg["pace_unit"]:      round(pace_value),
+        "pace_unit":           cfg["pace_unit"],
+        "pace_low":            cfg["pace_low"],
+        "pace_high":           cfg["pace_high"],
+        "vocab_diversity_pct": round(vocab_diversity * 100, 1),
+        "unique_words":        unique_count,
+        "total_tokens":        len(tokens),
+        "filler_words":        dict(filler_counts),
+        "filler_count":        total_fillers,
+        "filler_rate_pct":     round(filler_rate, 1),
+        "pauses":              [{"gap_s": round(g, 2), "before": b, "after": a} for g, b, a in pauses],
+        "pause_count":         len(pauses),
+    }
+
+    return {
+        "timestamp":      datetime.now().strftime("%Y-%m-%d_%H:%M:%S"),
+        "recording_file": str(path),
+        "language":       language,
+        "transcript":     transcript,
+        "metrics":        metrics,
+    }
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def run_analysis(wav_path: str, language: str = "en") -> dict:
+    """Transcribe wav_path and return a session dict (no file I/O)."""
+    return _compute(wav_path, language)
+
+
+def analyze(wav_path: str, language: str = "en") -> None:
+    """Transcribe, print metrics, and save a session JSON."""
     path = Path(wav_path)
     if not path.exists():
         print(f"File not found: {wav_path}")
         sys.exit(1)
 
-    # Lazy import so the script is importable without faster-whisper installed
     try:
-        from faster_whisper import WhisperModel
+        from faster_whisper import WhisperModel  # noqa: F401
     except ImportError:
         print("faster-whisper is not installed.  Run:  pip install faster-whisper")
         sys.exit(1)
 
-    print(f"Loading Whisper {MODEL_SIZE} …  (first run downloads the model ~145 MB)")
-    model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+    cfg = LANGUAGE_CONFIG[language]
+    print(f"Loading Whisper {cfg['model']} …  (first run downloads the model)")
+    session = _compute(wav_path, language)
 
-    # Load WAV and normalize peak to 0.7 — improves Whisper accuracy on quiet mics.
-    # The saved file is unchanged; only the array passed to Whisper is amplified.
-    with wave.open(wav_path, "r") as wf:
-        raw = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
-    audio = raw.astype(np.float32) / 32768.0
-    peak = float(np.abs(audio).max())
-    if peak > 0:
-        audio = audio / peak * 0.7
-
-    print(f"Transcribing {path.name} …  (input peak: {peak:.3f}, normalized to 0.7)")
-    segments, _info = model.transcribe(
-        audio,
-        word_timestamps=True,
-        language="en",
-        vad_filter=True,    # silently skip long silent stretches
-    )
-
-    # Flatten all word objects from all segments
-    words = []
-    for seg in segments:
-        if seg.words:
-            words.extend(seg.words)
-
-    if not words:
+    if not session:
         print("No speech detected in file.")
         return
 
-    # ── Transcript ───────────────────────────────────────────────────────────
-    transcript = " ".join(w.word for w in words).strip()
+    m          = session["metrics"]
+    pace_unit  = m["pace_unit"]
+    pace_value = m[pace_unit]
+    pace_low   = m["pace_low"]
+    pace_high  = m["pace_high"]
+
+    transcript = session["transcript"]
     print("\n" + "─" * 60)
     print("TRANSCRIPT")
     print("─" * 60)
     print(transcript)
 
-    # ── Core stats ───────────────────────────────────────────────────────────
-    total_duration = words[-1].end                  # seconds
-    word_count     = len(words)
-    wpm            = word_count / (total_duration / 60) if total_duration > 0 else 0
-
-    tokens         = [strip_punct(w.word) for w in words]
-    tokens         = [t for t in tokens if t]       # drop punctuation-only entries
-    unique_count   = len(set(tokens))
-    vocab_diversity = unique_count / len(tokens) if tokens else 0.0
-
-    # ── Filler words ─────────────────────────────────────────────────────────
-    filler_hits: list[tuple[float, str]] = []   # (timestamp, label)
-    seen_pair_indices: set[int] = set()
-
-    for i, w in enumerate(words):
-        t = strip_punct(w.word)
-
-        # Phrase check first (so "you know" isn't double-counted)
-        matched_phrase = False
-        for phrase in PHRASE_FILLERS:
-            end = i + len(phrase)
-            if end <= len(words):
-                pair = tuple(strip_punct(words[i + j].word) for j in range(len(phrase)))
-                if pair == phrase and i not in seen_pair_indices:
-                    filler_hits.append((w.start, " ".join(phrase)))
-                    seen_pair_indices.update(range(i, end))
-                    matched_phrase = True
-                    break
-        if matched_phrase or i in seen_pair_indices:
-            continue
-
-        if t in SINGLE_FILLERS:
-            filler_hits.append((w.start, t))
-        elif t in SENTENCE_START_FILLERS:
-            at_sentence_start = (i == 0) or ends_sentence(words[i - 1].word)
-            if at_sentence_start:
-                filler_hits.append((w.start, t))
-
-    filler_counts = Counter(label for _ts, label in filler_hits)
-
-    # ── Pauses ───────────────────────────────────────────────────────────────
-    pauses: list[tuple[float, str, str]] = []   # (gap, word_before, word_after)
-    for i in range(1, len(words)):
-        gap = words[i].start - words[i - 1].end
-        if gap >= PAUSE_THRESHOLD:
-            before = words[i - 1].word.strip()
-            after  = words[i].word.strip()
-            pauses.append((gap, before, after))
-    pauses.sort(reverse=True)
-
-    # ── Report ───────────────────────────────────────────────────────────────
     print("\n" + "─" * 60)
     print("METRICS")
     print("─" * 60)
 
-    # Pace
-    if wpm < 120:
-        pace_note = "slow — conversational target: 130–160 wpm"
-    elif wpm > 180:
-        pace_note = "fast — may feel rushed above 180 wpm"
+    if pace_value < pace_low:
+        pace_note = f"slow — target: {pace_low}–{pace_high} {pace_unit}"
+    elif pace_value > pace_high:
+        pace_note = f"fast — may feel rushed above {pace_high} {pace_unit}"
     else:
-        pace_note = "good range (130–180 wpm)"
-    print(f"  Duration        : {total_duration:.1f} s")
-    print(f"  Word count      : {word_count}")
-    print(f"  Pace            : {wpm:.0f} wpm  ({pace_note})")
+        pace_note = f"good range ({pace_low}–{pace_high} {pace_unit})"
 
-    # Vocabulary
+    print(f"  Duration        : {m['duration_s']:.1f} s")
+    print(f"  Word count      : {m['word_count']}")
+    print(f"  Pace            : {pace_value} {pace_unit}  ({pace_note})")
+
     diversity_note = (
-        "rich" if vocab_diversity > 0.60
-        else "moderate" if vocab_diversity > 0.45
+        "rich" if m["vocab_diversity_pct"] > 60
+        else "moderate" if m["vocab_diversity_pct"] > 45
         else "repetitive — consider varying word choice"
     )
-    print(f"\n  Vocab diversity : {vocab_diversity:.1%}  "
-          f"({unique_count} unique / {len(tokens)} total words)  [{diversity_note}]")
+    print(f"\n  Vocab diversity : {m['vocab_diversity_pct']}%  "
+          f"({m['unique_words']} unique / {m['total_tokens']} total)  [{diversity_note}]")
 
-    # Fillers
-    total_fillers = sum(filler_counts.values())
-    filler_rate   = (total_fillers / word_count * 100) if word_count else 0
-    print(f"\n  Filler words    : {total_fillers}  ({filler_rate:.1f}% of words)")
-    if filler_counts:
-        for filler, count in filler_counts.most_common():
+    print(f"\n  Filler words    : {m['filler_count']}  ({m['filler_rate_pct']:.1f}% of words)")
+    if m["filler_words"]:
+        for filler, count in sorted(m["filler_words"].items(), key=lambda x: -x[1]):
             print(f"    '{filler}' : {count}×")
     else:
         print("    (none detected)")
 
-    # Pauses
-    print(f"\n  Pauses ≥ {PAUSE_THRESHOLD:.1f}s   : {len(pauses)} detected")
-    for gap, before, after in pauses[:TOP_N_PAUSES]:
-        print(f"    {gap:.2f}s  after '{before}' / before '{after}'")
-    if len(pauses) > TOP_N_PAUSES:
-        print(f"    … and {len(pauses) - TOP_N_PAUSES} more")
-
+    print(f"\n  Pauses ≥ {PAUSE_THRESHOLD:.1f}s   : {m['pause_count']} detected")
+    for p in m["pauses"][:TOP_N_PAUSES]:
+        print(f"    {p['gap_s']:.2f}s  after '{p['before']}' / before '{p['after']}'")
+    if m["pause_count"] > TOP_N_PAUSES:
+        print(f"    … and {m['pause_count'] - TOP_N_PAUSES} more")
     print()
 
-    # ── Save session JSON ─────────────────────────────────────────────────────
     sessions_dir = Path("sessions")
     sessions_dir.mkdir(exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    session = {
-        "timestamp": timestamp,
-        "recording_file": str(path),
-        "transcript": transcript,
-        "metrics": {
-            "duration_s": round(total_duration, 1),
-            "word_count": word_count,
-            "wpm": round(wpm),
-            "vocab_diversity_pct": round(vocab_diversity * 100, 1),
-            "unique_words": unique_count,
-            "total_tokens": len(tokens),
-            "filler_words": dict(filler_counts),
-            "filler_count": sum(filler_counts.values()),
-            "filler_rate_pct": round(filler_rate, 1),
-            "pauses": [
-                {"gap_s": round(g, 2), "before": b, "after": a}
-                for g, b, a in pauses
-            ],
-            "pause_count": len(pauses),
-        },
-    }
-    session_file = sessions_dir / f"{timestamp}.json"
+    ts           = session["timestamp"].replace(":", "-")
+    session_file = sessions_dir / f"{ts}.json"
     session_file.write_text(json.dumps(session, indent=2))
     print(f"  Session saved → {session_file}")
 
 
 if __name__ == "__main__":
-    analyze(WAV_FILE)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("wav", nargs="?", default="recording.wav")
+    parser.add_argument("--language", default="en", choices=list(LANGUAGE_CONFIG),
+                        help="Language of the recording (en / fr / zh)")
+    args = parser.parse_args()
+    analyze(args.wav, args.language)

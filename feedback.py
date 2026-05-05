@@ -35,8 +35,8 @@ You are a speaking coach. You are warm but relentlessly specific — you never \
 give empty praise, and every observation cites a concrete moment or pattern \
 from the transcript.
 
-The speaker is already fluent in English and working on polish: filler words, \
-pace variation, word choice precision, and pausing for effect.
+The speaker is working on polish: filler words, pace variation, word choice \
+precision, and pausing for effect.
 
 Respond with valid JSON only — no markdown, no commentary outside the JSON:
 {
@@ -89,17 +89,33 @@ TONE_PROMPTS: dict[str, str] = {
 
 DEFAULT_TONE = "Michelle Obama"
 
+LANGUAGE_INSTRUCTIONS: dict[str, str] = {
+    "en": "Write your feedback in English.",
+    "fr": "Write your feedback in French (français).",
+    "zh": "Write your feedback in Mandarin Chinese — use simplified characters (用简体中文写反馈).",
+}
 
-def build_system_prompt(tone: str) -> str:
+
+def build_system_prompt(tone: str, language: str = "en") -> str:
     tone_instruction = TONE_PROMPTS.get(tone, TONE_PROMPTS[DEFAULT_TONE])
-    return f"{_BASE_PROMPT}\nVoice and tone:\n{tone_instruction}\n"
+    lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
+    return (
+        f"{_BASE_PROMPT}\n"
+        f"Voice and tone:\n{tone_instruction}\n\n"
+        f"Language:\n{lang_instruction}\n"
+    )
 
 
 SYSTEM_PROMPT = build_system_prompt(DEFAULT_TONE)
 
 
 def build_user_message(session: dict) -> str:
-    m = session["metrics"]
+    m          = session["metrics"]
+    pace_unit  = m.get("pace_unit", "wpm")
+    pace_value = m.get(pace_unit, m.get("wpm", 0))
+    pace_low   = m.get("pace_low", 130)
+    pace_high  = m.get("pace_high", 180)
+
     pause_lines = "\n".join(
         f"    {p['gap_s']:.2f}s — after '{p['before']}' / before '{p['after']}'"
         for p in m["pauses"][:5]
@@ -114,9 +130,9 @@ Transcript:
 
 Metrics:
 - Duration      : {m['duration_s']} s
-- Pace          : {m['wpm']} wpm  (target: 130–180)
+- Pace          : {pace_value} {pace_unit}  (target: {pace_low}–{pace_high})
 - Filler words  : {m['filler_count']} ({m['filler_rate_pct']}% of words) — {filler_lines}
-- Vocab diversity: {m['vocab_diversity_pct']}% ({m['unique_words']} unique / {m['total_tokens']} total words)
+- Vocab diversity: {m['vocab_diversity_pct']}% ({m['unique_words']} unique / {m['total_tokens']} total)
 - Pauses ≥ 0.5s : {m['pause_count']} detected
 {pause_lines}
 """
@@ -135,13 +151,18 @@ def post_discord(session: dict) -> None:
         or "none"
     )
 
+    pace_unit  = m.get("pace_unit", "wpm")
+    pace_value = m.get(pace_unit, m.get("wpm", 0))
+    pace_low   = m.get("pace_low", 130)
+    pace_high  = m.get("pace_high", 180)
+
     payload = {
         "embeds": [{
             "title": f"Speech Coach · {session['timestamp'][:10]}",
             "color": 0x7B68EE,
             "fields": [
-                {"name": "Duration", "value": f"{m['duration_s']}s",              "inline": True},
-                {"name": "WPM",      "value": f"{m['wpm']} (target 130–180)",     "inline": True},
+                {"name": "Duration", "value": f"{m['duration_s']}s",                                       "inline": True},
+                {"name": "Pace",     "value": f"{pace_value} {pace_unit} (target {pace_low}–{pace_high})", "inline": True},
                 {"name": "Fillers",  "value": f"{m['filler_count']} ({m['filler_rate_pct']}%) — {fillers}", "inline": False},
                 {"name": "Vocab",    "value": f"{m['vocab_diversity_pct']}%",     "inline": True},
                 {"name": "Pauses",   "value": str(m["pause_count"]),              "inline": True},
@@ -193,12 +214,15 @@ def main() -> None:
         print(f"Session file not found: {session_path}")
         sys.exit(1)
 
-    session = json.loads(session_path.read_text())
-    print(f"Session  : {session_path.name}  ({session['metrics']['duration_s']}s, "
-          f"{session['metrics']['wpm']} wpm)")
-    print(f"Calling  : {MODEL} ({args.tone}) …\n")
+    session  = json.loads(session_path.read_text())
+    m        = session["metrics"]
+    language = session.get("language", "en")
+    pace_unit  = m.get("pace_unit", "wpm")
+    pace_value = m.get(pace_unit, m.get("wpm", 0))
+    print(f"Session  : {session_path.name}  ({m['duration_s']}s, {pace_value} {pace_unit}, {language})")
+    print(f"Calling  : {MODEL} · {args.tone} …\n")
 
-    system_prompt = build_system_prompt(args.tone)
+    system_prompt = build_system_prompt(args.tone, language)
     response = CLIENT.messages.create(
         model=MODEL,
         max_tokens=1024,

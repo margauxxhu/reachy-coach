@@ -104,23 +104,29 @@ class SpeechCoachApp:
         tk.Label(status_row, textvariable=self._status_var,
                  bg=BG, fg=T2, font=F_STATUS).pack(side="left", padx=(5, 0))
 
-        # ── Coach voice ───────────────────────────────────────────────────────
-        voice_row = tk.Frame(r, bg=BG)
-        voice_row.pack(fill="x", padx=28, pady=(0, 16))
+        # ── Language + Coach voice (one row) ─────────────────────────────────
+        selectors_row = tk.Frame(r, bg=BG)
+        selectors_row.pack(fill="x", padx=28, pady=(0, 16))
 
-        tk.Label(voice_row, text="Coach voice", bg=BG, fg=T2,
-                 font=F_LABEL).pack(side="left", padx=(0, 12))
+        def _menu(parent, var, options):
+            m = tk.OptionMenu(parent, var, *options)
+            m.config(bg=CARD, fg=T1, activebackground=BORDER, activeforeground=T1,
+                     font=F_STATUS, relief="flat", bd=0, padx=10, pady=4,
+                     highlightthickness=1, highlightbackground=BORDER)
+            m["menu"].config(bg=CARD, fg=T1, font=F_STATUS, relief="flat")
+            return m
 
+        tk.Label(selectors_row, text="Language", bg=BG, fg=T2,
+                 font=F_LABEL).pack(side="left", padx=(0, 8))
+        self._lang_var = tk.StringVar(value="English")
+        _menu(selectors_row, self._lang_var,
+              ["English", "French (Français)", "Mandarin (普通话)"]).pack(side="left")
+
+        tk.Label(selectors_row, text="Coach voice", bg=BG, fg=T2,
+                 font=F_LABEL).pack(side="left", padx=(20, 8))
         self._tone_var = tk.StringVar(value="Michelle Obama")
-        voices = ["Michelle Obama", "Marcus Aurelius", "Paul Graham", "Steve Jobs", "Yoda"]
-        tone_menu = tk.OptionMenu(voice_row, self._tone_var, *voices)
-        tone_menu.config(
-            bg=CARD, fg=T1, activebackground=BORDER, activeforeground=T1,
-            font=F_STATUS, relief="flat", bd=0, padx=10, pady=4,
-            highlightthickness=1, highlightbackground=BORDER,
-        )
-        tone_menu["menu"].config(bg=CARD, fg=T1, font=F_STATUS, relief="flat")
-        tone_menu.pack(side="left")
+        _menu(selectors_row, self._tone_var,
+              ["Michelle Obama", "Marcus Aurelius", "Paul Graham", "Steve Jobs", "Yoda"]).pack(side="left")
 
         # ── Buttons ───────────────────────────────────────────────────────────
         btn_row = tk.Frame(r, bg=BG)
@@ -188,6 +194,11 @@ class SpeechCoachApp:
         self._proc.wait()
         return self._proc.returncode == 0 and not self._stop_flag.is_set()
 
+    def _lang_code(self) -> str:
+        return {"English": "en", "French (Français)": "fr", "Mandarin (普通话)": "zh"}.get(
+            self._lang_var.get(), "en"
+        )
+
     def _pipeline(self) -> None:
         self.root.after(0, self._set_status,
                         "🎙  Recording — speak now, auto-stops after 3 s silence", ACCENT)
@@ -195,8 +206,9 @@ class SpeechCoachApp:
             self.root.after(0, self._reset_ui)
             return
 
-        self.root.after(0, self._set_status, "📝  Transcribing…", ACCENT)
-        if not self._run("analyze.py"):
+        lang = self._lang_code()
+        self.root.after(0, self._set_status, f"📝  Transcribing ({self._lang_var.get()})…", ACCENT)
+        if not self._run("analyze.py", extra_args=["--language", lang]):
             self.root.after(0, self._reset_ui)
             return
 

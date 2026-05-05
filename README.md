@@ -15,6 +15,20 @@ A macOS desktop app that records your speech, transcribes it, and delivers speci
 
 ---
 
+## Project files
+
+| File | What it does |
+|---|---|
+| `coach_ui.py` | macOS desktop UI — start/stop session, displays transcript and coaching cards |
+| `create_app.sh` | Builds `Speech Coach.app` in `/Applications` — run once |
+| `capture_audio.py` | Records from Reachy Mini's mic via WebRTC; robot nods and tracks your face |
+| `embody.py` | Robot head control, eye contact tracking, and TTS playback |
+| `analyze.py` | Whisper transcription + metrics (WPM, fillers, pauses, vocab diversity) |
+| `feedback.py` | Sends transcript + metrics to Claude; returns structured coaching in chosen voice |
+| `progress.py` | Trend table across all sessions — sparklines for WPM, filler rate, vocab diversity |
+
+---
+
 ## Coach voices
 
 | Voice | Style |

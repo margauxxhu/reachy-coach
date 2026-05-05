@@ -77,7 +77,7 @@ class SpeechCoachApp:
         r.title("Speech Coach")
         r.configure(bg=BG)
         r.resizable(False, False)
-        r.geometry("620x780")
+        r.geometry("620x860")
 
         # ── Header ────────────────────────────────────────────────────────────
         hdr = tk.Frame(r, bg=BG)

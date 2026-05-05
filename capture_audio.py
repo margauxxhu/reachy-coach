@@ -38,6 +38,7 @@ OUTPUT_FILE = sys.argv[1] if len(sys.argv) > 1 else "recording.wav"
 
 SILENCE_DURATION       = 3.0   # seconds of quiet → auto-stop
 MIN_SPEECH_BEFORE_STOP = 2.0   # don't auto-stop until this much speech has accumulated
+PAUSE_REACTION_DELAY   = 0.5   # seconds of silence before lean-in activates
 
 # Rolling noise-floor estimation
 NOISE_WINDOW_S  = 3.0   # look back this far to estimate the floor
@@ -135,18 +136,28 @@ def main() -> None:
 
         is_speech = level > silence_threshold
 
-        if _nod is not None:
-            _nod.set_speech(is_speech)
-
         if is_speech:
             speech_duration += chunk_duration
             silence_start = None
+            if _nod is not None:
+                _nod.set_pause(False)
+                _nod.set_speech(True)
         elif speech_duration >= MIN_SPEECH_BEFORE_STOP:
             if silence_start is None:
                 silence_start = time.time()
             elif time.time() - silence_start >= SILENCE_DURATION:
+                if _nod is not None:
+                    _nod.set_pause(False)
                 print(f"\nAuto-stopped: {SILENCE_DURATION:.0f} s of silence.")
                 break
+            if _nod is not None:
+                _nod.set_speech(False)
+                in_pause = time.time() - silence_start >= PAUSE_REACTION_DELAY
+                _nod.set_pause(in_pause)
+        else:
+            if _nod is not None:
+                _nod.set_speech(False)
+                _nod.set_pause(False)
 
         # Meter scaled relative to live threshold; floor line at 8 bars
         bar = "█" * min(40, int(level / silence_threshold * 8))

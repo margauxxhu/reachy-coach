@@ -66,6 +66,7 @@ LISTEN_PITCH_DEG = 10.0   # resting "attentive" tilt during recording
 NOD_AMP_DEG      = 6.0    # ± degrees oscillation around resting pitch
 NOD_PERIOD_S     = 2.0    # seconds per full nod cycle
 NOD_HZ           = 20     # control loop rate
+PAUSE_LEAN_DEG   = 4.0    # extra forward tilt held during a speaker's pause
 
 # Antennas — [right_angle, left_angle] in radians.
 # At NEUTRAL the antennas are slightly drooped (~10°); at LISTEN they are upright.
@@ -142,6 +143,7 @@ class NodThread(threading.Thread):
         self._client    = client
         self._stop_flag = threading.Event()
         self._speech    = threading.Event()
+        self._pause     = threading.Event()
         self._t0        = time.time()
 
     def set_speech(self, active: bool) -> None:
@@ -149,6 +151,12 @@ class NodThread(threading.Thread):
             self._speech.set()
         else:
             self._speech.clear()
+
+    def set_pause(self, active: bool) -> None:
+        if active:
+            self._pause.set()
+        else:
+            self._pause.clear()
 
     def stop(self) -> None:
         self._stop_flag.set()
@@ -158,15 +166,11 @@ class NodThread(threading.Thread):
         while not self._stop_flag.is_set():
             if self._speech.is_set():
                 t = time.time() - self._t0
-
                 head_angle = LISTEN_PITCH_DEG + NOD_AMP_DEG * math.sin(
                     2 * math.pi * t / NOD_PERIOD_S
                 )
-                # Antennas waggle out of phase with the nod for an organic feel.
-                # Right and left mirror each other (fan in / fan out).
                 a = ANT_AMP * math.sin(2 * math.pi * t / ANT_PERIOD_S)
                 antennas = [LISTEN_ANTENNAS[0] + a, LISTEN_ANTENNAS[1] - a]
-
                 try:
                     self._client.send_command(
                         SetFullTargetCmd(
@@ -176,7 +180,19 @@ class NodThread(threading.Thread):
                         )
                     )
                 except Exception:
-                    pass  # drop silently on transient WebSocket hiccup
+                    pass
+            elif self._pause.is_set():
+                # Hold still and lean forward — "I'm listening, take your time"
+                try:
+                    self._client.send_command(
+                        SetFullTargetCmd(
+                            head=_flat_pose(LISTEN_PITCH_DEG + PAUSE_LEAN_DEG),
+                            antennas=list(LISTEN_ANTENNAS),
+                            body_yaw=None,
+                        )
+                    )
+                except Exception:
+                    pass
             time.sleep(interval)
 
 
@@ -200,6 +216,7 @@ class EyeContactThread(threading.Thread):
         self._get_frame  = get_frame
         self._stop_flag  = threading.Event()
         self._speech     = threading.Event()
+        self._pause      = threading.Event()
         self._t0         = time.time()
         # EMA state (degrees)
         self._yaw   = 0.0
@@ -210,6 +227,12 @@ class EyeContactThread(threading.Thread):
             self._speech.set()
         else:
             self._speech.clear()
+
+    def set_pause(self, active: bool) -> None:
+        if active:
+            self._pause.set()
+        else:
+            self._pause.clear()
 
     def stop(self) -> None:
         self._stop_flag.set()
@@ -230,8 +253,8 @@ class EyeContactThread(threading.Thread):
             self._yaw   += EYE_ALPHA * (target_yaw   - self._yaw)
             self._pitch += EYE_ALPHA * (target_pitch - self._pitch)
 
-            yaw   = self._yaw
-            pitch = self._pitch
+            yaw      = self._yaw
+            pitch    = self._pitch
             antennas = list(LISTEN_ANTENNAS)
 
             if self._speech.is_set():
@@ -239,6 +262,9 @@ class EyeContactThread(threading.Thread):
                 pitch += NOD_AMP_DEG * math.sin(2 * math.pi * t / NOD_PERIOD_S)
                 a = ANT_AMP * math.sin(2 * math.pi * t / ANT_PERIOD_S)
                 antennas = [LISTEN_ANTENNAS[0] + a, LISTEN_ANTENNAS[1] - a]
+            elif self._pause.is_set():
+                # Lean forward while keeping face tracking — still, attentive
+                pitch += PAUSE_LEAN_DEG
 
             try:
                 self._client.send_command(

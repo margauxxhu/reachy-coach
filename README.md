@@ -1,15 +1,17 @@
 # Speech Coach
 
-A macOS desktop app that records your speech, transcribes it, and delivers specific coaching feedback from Claude — in the voice of your chosen coach. Optional: run it on a [Reachy Mini Wireless](https://www.pollen-robotics.com/reachy-mini/) robot for an embodied experience with face tracking, nodding, and spoken feedback.
+A macOS control panel for an embodied speech coach running on [Reachy Mini Wireless](https://www.pollen-robotics.com/reachy-mini/). The robot records your speech through its dedicated mic array, Whisper measures it, and Claude coaches you back — in your chosen voice and language.
+
+> **Why the robot mic?** Reachy's mic array is directional and isolated. Using the Mac mic would pick up music, room noise, and anything else playing — defeating the purpose of accurate speech measurement.
 
 ---
 
 ## What it does
 
-1. **Record** — click Start Session, speak, auto-stops after 3 s of silence
-2. **Transcribe** — Whisper analyses your WPM, filler words, pauses, and vocab diversity
-3. **Coach** — Claude returns three things in your chosen coach's voice:
-   - What you did well (with evidence from the transcript)
+1. **Record** — Reachy captures your speech; auto-stops after 3 s of silence
+2. **Transcribe** — Whisper analyses your WPM/CPM, filler words, pauses, and vocab diversity
+3. **Coach** — Claude returns three things in your chosen voice:
+   - What you've done well (with evidence from the transcript)
    - One specific thing to improve (quoting your exact words)
    - A concrete drill to practise before your next session
 
@@ -19,13 +21,13 @@ A macOS desktop app that records your speech, transcribes it, and delivers speci
 
 | File | What it does |
 |---|---|
-| `coach_ui.py` | macOS desktop UI: start/stop, transcript, coaching cards, voice selector |
+| `coach_ui.py` | macOS desktop UI: start/stop, transcript, coaching cards, language + voice selector |
 | `create_app.sh` | macOS app builder: installs Speech Coach.app in /Applications — run once |
-| `capture_audio.py` | Robot mic: WebRTC recording, adaptive silence detection, auto-stop |
+| `capture_audio.py` | Robot mic: WebRTC recording, adaptive silence detection, pause reaction |
 | `embody.py` | Robot body: head orientation, eye contact tracking, nod, antenna waggle, TTS |
-| `analyze.py` | Pipeline: Whisper transcription, WPM, fillers, pauses, vocab diversity |
+| `analyze.py` | Pipeline: Whisper transcription, WPM/CPM, fillers, pauses, vocab diversity |
 | `feedback.py` | Pipeline: sends transcript + metrics to Claude, returns coaching in chosen voice |
-| `progress.py` | History: session trends — WPM, filler rate, vocab diversity, last drill |
+| `progress.py` | History: session trends — pace, filler rate, vocab diversity, last drill |
 
 ---
 
@@ -41,29 +43,40 @@ A macOS desktop app that records your speech, transcribes it, and delivers speci
 
 ---
 
+## Languages
+
+| Language | Pace metric | Target | Whisper model |
+|---|---|---|---|
+| English | WPM | 130–180 | `base.en` |
+| French | WPM | 130–180 | `base` (multilingual) |
+| Mandarin | CPM (chars/min) | 200–350 | `base` (multilingual) |
+
+Claude responds in the same language as the recording. The multilingual model downloads automatically on first non-English use (~145 MB).
+
+---
+
 ## Why not just use ChatGPT, Claude, or Gemini?
 
 | | Speech Coach | Chat (text) | Voice mode |
 |---|---|---|---|
-| **Speech metrics** | WPM, filler rate, pause timing, vocab diversity — auto-computed | You count manually | Not exposed |
+| **Speech metrics** | WPM/CPM, filler rate, pause timing, vocab diversity — auto-computed | You count manually | Not exposed |
 | **Pause detection** | Word-level timestamps from Whisper | Impossible | Impossible |
 | **Feedback format** | Always: what worked / improve / drill, quoting your exact words | Whatever the model feels like | Whatever the model feels like |
 | **Setup per session** | One click | Re-prompt every time | Re-prompt every time |
 | **Progress over time** | Every session logged; `progress.py` shows trends | Nothing persisted | Nothing persisted |
-| **Embodied coaching** | Optional Reachy Mini: face tracking, nodding, spoken feedback | Screen only | Screen only |
+| **Embodied coaching** | Reachy Mini: face tracking, nodding, pause reaction, spoken feedback | Screen only | Screen only |
 
 The gap isn't the LLM — it's everything before it. ChatGPT, Claude, and Gemini can all comment on a transcript you paste in. None of them can measure your speech.
 
 ---
 
-## Quick start (macOS app — no robot needed)
+## Setup
 
 ### 1. Dependencies
 
 ```bash
-# Use the Reachy Mini virtualenv (or any Python 3.12+ venv)
 source ~/reachy_mini_env/bin/activate
-pip install faster-whisper anthropic python-dotenv
+pip install faster-whisper anthropic python-dotenv mediapipe
 ```
 
 ### 2. API key
@@ -79,9 +92,9 @@ cd ~/reachy-projects/speech-coach
 bash create_app.sh
 ```
 
-This creates **Speech Coach.app** in `/Applications`. Double-click to launch.
+Creates **Speech Coach.app** in `/Applications`. Double-click to launch. Reachy Mini must be awake and on the same WiFi network before starting a session.
 
-> The UI requires the system Python at `/Library/Frameworks/Python.framework/Versions/3.12`. Pipeline scripts run inside `~/reachy_mini_env`.
+> The UI uses the system Python at `/Library/Frameworks/Python.framework/Versions/3.12`. Pipeline scripts run inside `~/reachy_mini_env`.
 
 ---
 
@@ -90,27 +103,32 @@ This creates **Speech Coach.app** in `/Applications`. Double-click to launch.
 ```
 Speech Coach 🎙
 Speak. Listen. Get better.
-────────────────────────────────
+────────────────────────────────────────
 ● Ready when you are ✦
 
-Coach voice  [ Michelle Obama ▾ ]
+Language [ English ▾ ]   Coach voice [ Michelle Obama ▾ ]
 
 [ Start Session ]  [ Stop ]
 
 WHAT YOU SAID 💬
-┌─────────────────────────────┐
-│ transcript appears here     │
-└─────────────────────────────┘
+┌──────────────────────────────────────┐
+│ transcript appears here              │
+└──────────────────────────────────────┘
+
+WHAT YOU'VE DONE WELL ✓
+┌──────────────────────────────────────┐
+│ what worked appears here             │
+└──────────────────────────────────────┘
 
 ONE THING TO WORK ON
-┌─────────────────────────────┐
-│ improve appears here        │
-└─────────────────────────────┘
+┌──────────────────────────────────────┐
+│ improve appears here                 │
+└──────────────────────────────────────┘
 
 YOUR DRILL 💪
-┌─────────────────────────────┐
-│ drill appears here          │
-└─────────────────────────────┘
+┌──────────────────────────────────────┐
+│ drill appears here                   │
+└──────────────────────────────────────┘
 ```
 
 ---
@@ -121,13 +139,14 @@ YOUR DRILL 💪
 |---|---|---|---|
 | `capture_audio.py` | `SPEECH_RATIO` | `6.0` | Raise if auto-stop fires mid-sentence |
 | `capture_audio.py` | `SILENCE_DURATION` | `3.0 s` | Quiet time before auto-stop |
-| `analyze.py` | `MODEL_SIZE` | `base.en` | Switch to `small.en` for better accuracy |
+| `capture_audio.py` | `PAUSE_REACTION_DELAY` | `0.5 s` | Silence before robot leans in |
+| `embody.py` | `NOD_AMP_DEG` | `6.0` | Head nod amplitude (degrees) |
+| `embody.py` | `PAUSE_LEAN_DEG` | `4.0` | Forward lean during speaker pause |
+| `embody.py` | `MAX_YAW_DEG` | `25.0` | Max head turn for face tracking |
 
 ---
 
 ## Discord notifications (optional)
-
-After each session `feedback.py` posts a summary embed to Discord if a webhook URL is set.
 
 1. Discord → channel → Edit → Integrations → Webhooks → New Webhook → Copy URL
 2. Add to `.env`:
@@ -135,35 +154,7 @@ After each session `feedback.py` posts a summary embed to Discord if a webhook U
    DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
    ```
 
-The embed includes duration, WPM, fillers, vocab diversity, and the full coaching feedback. Silently skipped if the variable is unset.
-
----
-
-## Robot mode (Reachy Mini — optional)
-
-With a Reachy Mini Wireless on the same WiFi network you get:
-
-- Face tracking via MediaPipe (head turns to follow you)
-- Nodding + antenna waggle during speech
-- Feedback spoken aloud through the robot's speaker
-
-```bash
-source ~/reachy_mini_env/bin/activate
-python capture_audio.py && python analyze.py && python feedback.py
-```
-
-Additional robot config:
-
-| File | Constant | Default | Effect |
-|---|---|---|---|
-| `embody.py` | `NOD_AMP_DEG` | `6.0` | Head nod amplitude (degrees) |
-| `embody.py` | `NOD_PERIOD_S` | `2.0` | Nod cycle duration (seconds) |
-| `embody.py` | `ANT_AMP` | `0.45` | Antenna waggle amplitude (radians) |
-| `embody.py` | `ANT_PERIOD_S` | `3.5` | Antenna waggle cycle duration (seconds) |
-| `embody.py` | `MAX_YAW_DEG` | `25.0` | Max head turn for face tracking |
-| `embody.py` | `EYE_ALPHA` | `0.25` | Tracking smoothing (0 = slow, 1 = instant) |
-
-> On first run, `embody.py` downloads a small MediaPipe face detector model (~1 MB) — one-time only.
+Embed includes duration, pace, fillers, vocab diversity, and full coaching feedback. Silently skipped if unset.
 
 ---
 
@@ -174,4 +165,4 @@ python progress.py        # all sessions
 python progress.py -n 10  # last 10 only
 ```
 
-Trend table with sparklines for WPM, filler rate, vocab diversity, and your last drill.
+Trend table with sparklines for pace, filler rate, vocab diversity, and your last drill.

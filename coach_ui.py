@@ -77,7 +77,7 @@ class SpeechCoachApp:
         r.title("Speech Coach")
         r.configure(bg=BG)
         r.resizable(False, False)
-        r.geometry("620x660")
+        r.geometry("620x780")
 
         # ── Header ────────────────────────────────────────────────────────────
         hdr = tk.Frame(r, bg=BG)
@@ -150,9 +150,10 @@ class SpeechCoachApp:
         self._stop_btn.pack(side="left")
 
         # ── Content cards ─────────────────────────────────────────────────────
-        self._transcript = _card(r, "What you said 💬",        height=4)
-        self._improve    = _card(r, "One thing to work on",    height=3)
-        self._drill      = _card(r, "Your drill 💪",           height=3)
+        self._transcript  = _card(r, "What you said 💬",          height=4)
+        self._what_worked = _card(r, "What you've done well ✓",   height=3)
+        self._improve     = _card(r, "One thing to work on",      height=3)
+        self._drill       = _card(r, "Your drill 💪",             height=3)
 
     # ── Status helpers ────────────────────────────────────────────────────────
 
@@ -173,7 +174,7 @@ class SpeechCoachApp:
             return
         self._running = True
         self._stop_flag.clear()
-        for box in (self._transcript, self._improve, self._drill):
+        for box in (self._transcript, self._what_worked, self._improve, self._drill):
             _set(box, "")
         self._start_btn.config(state="disabled", bg="#C4A090")
         self._stop_btn.config(state="normal", bg=STOP_C, fg="#FFFFFF",
@@ -236,8 +237,9 @@ class SpeechCoachApp:
             files = sorted((COACH_DIR / "sessions").glob("*.json"))
             if files:
                 fb = json.loads(files[-1].read_text()).get("feedback", {})
-                _set(self._improve, fb.get("improve", ""))
-                _set(self._drill,   fb.get("drill", ""))
+                _set(self._what_worked, fb.get("what_worked", ""))
+                _set(self._improve,     fb.get("improve", ""))
+                _set(self._drill,       fb.get("drill", ""))
         except Exception:
             pass
 

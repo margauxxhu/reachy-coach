@@ -27,6 +27,23 @@ A macOS desktop app that records your speech, transcribes it, and delivers speci
 
 ---
 
+## Why not just use ChatGPT or Claude?
+
+You could paste a transcript into a chat window — but you'd lose everything that makes this useful:
+
+| | Speech Coach | ChatGPT / Claude chat | Voice mode (Advanced Voice / Claude voice) |
+|---|---|---|---|
+| **Audio metrics** | WPM, filler rate, pause timing, vocab diversity — computed automatically | None — you'd have to count manually | None — built-in STT doesn't expose word-level timestamps |
+| **Pause detection** | Exact per-word timestamps from Whisper | Not possible | Not possible |
+| **Feedback structure** | Always: what worked / improve / drill — quoting your exact words | Varies — depends on how you prompt | Varies |
+| **Prompting** | Zero — the persona and rules are baked in | Re-prompt every session (Custom GPTs help, but metrics still missing) | Re-prompt every session |
+| **Session history** | Every session saved; `progress.py` shows trends over time | None unless you build it yourself | None |
+| **Embodied presence** | Optional Reachy Mini: face tracking, nodding, spoken feedback | Screen only | Screen only |
+
+The short version: chat LLMs can give you impressionistic feedback on text you paste in. Speech Coach measures your speech, not just your words.
+
+---
+
 ## Quick start (macOS app — no robot needed)
 
 ### 1. Dependencies

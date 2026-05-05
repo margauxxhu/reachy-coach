@@ -27,20 +27,18 @@ A macOS desktop app that records your speech, transcribes it, and delivers speci
 
 ---
 
-## Why not just use ChatGPT or Claude?
+## Why not just use ChatGPT, Claude, or Gemini?
 
-You could paste a transcript into a chat window — but you'd lose everything that makes this useful:
-
-| | Speech Coach | ChatGPT / Claude chat | Voice mode (Advanced Voice / Claude voice) |
+| | Speech Coach | Chat (text) | Voice mode |
 |---|---|---|---|
-| **Audio metrics** | WPM, filler rate, pause timing, vocab diversity — computed automatically | None — you'd have to count manually | None — built-in STT doesn't expose word-level timestamps |
-| **Pause detection** | Exact per-word timestamps from Whisper | Not possible | Not possible |
-| **Feedback structure** | Always: what worked / improve / drill — quoting your exact words | Varies — depends on how you prompt | Varies |
-| **Prompting** | Zero — the persona and rules are baked in | Re-prompt every session (Custom GPTs help, but metrics still missing) | Re-prompt every session |
-| **Session history** | Every session saved; `progress.py` shows trends over time | None unless you build it yourself | None |
-| **Embodied presence** | Optional Reachy Mini: face tracking, nodding, spoken feedback | Screen only | Screen only |
+| **Speech metrics** | WPM, filler rate, pause timing, vocab diversity — auto-computed | You count manually | Not exposed |
+| **Pause detection** | Word-level timestamps from Whisper | Impossible | Impossible |
+| **Feedback format** | Always: what worked / improve / drill, quoting your exact words | Whatever the model feels like | Whatever the model feels like |
+| **Setup per session** | One click | Re-prompt every time | Re-prompt every time |
+| **Progress over time** | Every session logged; `progress.py` shows trends | Nothing persisted | Nothing persisted |
+| **Embodied coaching** | Optional Reachy Mini: face tracking, nodding, spoken feedback | Screen only | Screen only |
 
-The short version: chat LLMs can give you impressionistic feedback on text you paste in. Speech Coach measures your speech, not just your words.
+The gap isn't the LLM — it's everything before it. ChatGPT, Claude, and Gemini can all comment on a transcript you paste in. None of them can measure your speech.
 
 ---
 

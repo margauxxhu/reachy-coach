@@ -1,101 +1,148 @@
 # Speech Coach
 
-An embodied English fluency coach running on a [Reachy Mini Wireless](https://www.pollen-robotics.com/reachy-mini/) robot. Record a short speech, get specific Claude coaching on pace, filler words, and delivery, and hear the feedback spoken back through the robot while it tracks your face, nods, and wags its antennas.
+A macOS desktop app that records your speech, transcribes it, and delivers specific coaching feedback from Claude — in the voice of your chosen coach. Optional: run it on a [Reachy Mini Wireless](https://www.pollen-robotics.com/reachy-mini/) robot for an embodied experience with face tracking, nodding, and spoken feedback.
 
 ---
 
 ## What it does
 
-| Script | What happens |
+1. **Record** — click Start Session, speak, auto-stops after 3 s of silence
+2. **Transcribe** — Whisper analyses your WPM, filler words, pauses, and vocab diversity
+3. **Coach** — Claude returns three things in your chosen coach's voice:
+   - What you did well (with evidence from the transcript)
+   - One specific thing to improve (quoting your exact words)
+   - A concrete drill to practise before your next session
+
+---
+
+## Coach voices
+
+| Voice | Style |
 |---|---|
-| `capture_audio.py` | Records from Reachy's mic via WebRTC. Robot orients head and raises antennas at start; tracks your face with its camera (MediaPipe); nods + wags antennas during speech; auto-stops after 3 s of silence. Saves `recording.wav`. |
-| `analyze.py` | Whisper transcription + metrics: WPM, filler words (`um`, `uh`, `like`, `so`, `you know`), pause detection, vocab diversity. Saves `sessions/YYYY-MM-DD_HH-MM-SS.json`. |
-| `feedback.py` | Sends transcript + metrics to Claude. Prints and saves structured coaching (what worked / improve / drill). Robot speaks the *improve* and *drill* fields aloud via WebRTC while nodding. |
-| `progress.py` | Trend table across all sessions — sparklines for WPM, filler rate, vocab diversity, per-filler word counts, last drill reminder. |
+| **Michelle Obama** *(default)* | Warm, grounded, deeply encouraging without being soft |
+| **Marcus Aurelius** | Stoic, measured, philosophical — duty and self-mastery |
+| **Paul Graham** | Direct, precise, slightly contrarian — cuts fuzzy thinking |
+| **Steve Jobs** | Visionary, exacting, uncompromising about craft |
+| **Yoda** | Ancient wisdom, inverted syntax, earned praise only |
 
 ---
 
-## Requirements
+## Quick start (macOS app — no robot needed)
 
-**Hardware**
-- Reachy Mini Wireless robot, awake and on the same WiFi network
-- Mac (Apple Silicon or Intel)
-
-**Software**
-- Python 3.12+
-- [Reachy Mini SDK](https://github.com/pollen-robotics/reachy-mini) installed (provides `reachy_mini_env`)
-- `faster-whisper`, `anthropic`, `python-dotenv`, `mediapipe`
-
----
-
-## Setup
+### 1. Dependencies
 
 ```bash
-# 1. Activate the Reachy Mini virtualenv
+# Use the Reachy Mini virtualenv (or any Python 3.12+ venv)
 source ~/reachy_mini_env/bin/activate
-
-# 2. Install additional dependencies
-pip install faster-whisper anthropic python-dotenv mediapipe
-
-# 3. Add your Anthropic API key
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
-
-# 4. Wake the robot in Reachy Mini Control before recording
+pip install faster-whisper anthropic python-dotenv
 ```
 
-On first run, `embody.py` downloads a small MediaPipe face detector model (~1 MB) next to the script. This is a one-time download.
+### 2. API key
+
+```bash
+echo "ANTHROPIC_API_KEY=sk-ant-..." > ~/reachy-projects/speech-coach/.env
+```
+
+### 3. Create the app
+
+```bash
+cd ~/reachy-projects/speech-coach
+bash create_app.sh
+```
+
+This creates **Speech Coach.app** in `/Applications`. Double-click to launch.
+
+> The UI requires the system Python at `/Library/Frameworks/Python.framework/Versions/3.12`. Pipeline scripts run inside `~/reachy_mini_env`.
 
 ---
 
-## Usage
+## Interface
 
-```bash
-# Full coaching session
-python capture_audio.py && python analyze.py && python feedback.py
+```
+Speech Coach 🎙
+Speak. Listen. Get better.
+────────────────────────────────
+● Ready when you are ✦
 
-# Check progress across sessions
-python progress.py          # all sessions
-python progress.py -n 10    # last 10 only
+Coach voice  [ Michelle Obama ▾ ]
+
+[ Start Session ]  [ Stop ]
+
+WHAT YOU SAID 💬
+┌─────────────────────────────┐
+│ transcript appears here     │
+└─────────────────────────────┘
+
+ONE THING TO WORK ON
+┌─────────────────────────────┐
+│ improve appears here        │
+└─────────────────────────────┘
+
+YOUR DRILL 💪
+┌─────────────────────────────┐
+│ drill appears here          │
+└─────────────────────────────┘
 ```
 
 ---
 
 ## Configuration
 
-Key constants at the top of each file:
-
 | File | Constant | Default | Effect |
 |---|---|---|---|
 | `capture_audio.py` | `SPEECH_RATIO` | `6.0` | Raise if auto-stop fires mid-sentence |
 | `capture_audio.py` | `SILENCE_DURATION` | `3.0 s` | Quiet time before auto-stop |
 | `analyze.py` | `MODEL_SIZE` | `base.en` | Switch to `small.en` for better accuracy |
-| `embody.py` | `NOD_AMP_DEG` | `6.0` | Head nod amplitude (degrees) |
-| `embody.py` | `NOD_PERIOD_S` | `2.0` | Head nod cycle duration (seconds) |
-| `embody.py` | `ANT_AMP` | `0.45` | Antenna waggle amplitude (radians) |
-| `embody.py` | `ANT_PERIOD_S` | `3.5` | Antenna waggle cycle duration (seconds) |
-| `embody.py` | `MAX_YAW_DEG` | `25.0` | Max head turn for eye contact tracking |
-| `embody.py` | `EYE_ALPHA` | `0.25` | Face tracking smoothing (0 = slow, 1 = instant) |
 
 ---
 
 ## Discord notifications (optional)
 
-After each session `feedback.py` posts a summary embed to a Discord channel if a webhook URL is set.
+After each session `feedback.py` posts a summary embed to Discord if a webhook URL is set.
 
-1. In Discord: open a channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy URL
+1. Discord → channel → Edit → Integrations → Webhooks → New Webhook → Copy URL
 2. Add to `.env`:
    ```
    DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
    ```
 
-The embed includes duration, WPM, filler count, vocab diversity, and the full coaching feedback. If the variable is not set, the step is silently skipped.
+The embed includes duration, WPM, fillers, vocab diversity, and the full coaching feedback. Silently skipped if the variable is unset.
 
 ---
 
-## Gotchas
+## Robot mode (Reachy Mini — optional)
 
-- **Venv**: always activate `~/reachy_mini_env` before running anything
-- **Robot must be awake** in Reachy Mini Control before `capture_audio.py`
-- **Mic is quiet**: `analyze.py` normalizes the WebRTC audio to 0.7 peak before Whisper — do not change this
-- **Eye contact fallback**: if `mediapipe` is not installed, `capture_audio.py` falls back to plain head nodding with no face tracking
-- **Model file**: `_face_detector.tflite` is downloaded automatically and excluded from git
+With a Reachy Mini Wireless on the same WiFi network you get:
+
+- Face tracking via MediaPipe (head turns to follow you)
+- Nodding + antenna waggle during speech
+- Feedback spoken aloud through the robot's speaker
+
+```bash
+source ~/reachy_mini_env/bin/activate
+python capture_audio.py && python analyze.py && python feedback.py
+```
+
+Additional robot config:
+
+| File | Constant | Default | Effect |
+|---|---|---|---|
+| `embody.py` | `NOD_AMP_DEG` | `6.0` | Head nod amplitude (degrees) |
+| `embody.py` | `NOD_PERIOD_S` | `2.0` | Nod cycle duration (seconds) |
+| `embody.py` | `ANT_AMP` | `0.45` | Antenna waggle amplitude (radians) |
+| `embody.py` | `ANT_PERIOD_S` | `3.5` | Antenna waggle cycle duration (seconds) |
+| `embody.py` | `MAX_YAW_DEG` | `25.0` | Max head turn for face tracking |
+| `embody.py` | `EYE_ALPHA` | `0.25` | Tracking smoothing (0 = slow, 1 = instant) |
+
+> On first run, `embody.py` downloads a small MediaPipe face detector model (~1 MB) — one-time only.
+
+---
+
+## Progress tracking
+
+```bash
+python progress.py        # all sessions
+python progress.py -n 10  # last 10 only
+```
+
+Trend table with sparklines for WPM, filler rate, vocab diversity, and your last drill.

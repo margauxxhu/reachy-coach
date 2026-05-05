@@ -30,10 +30,10 @@ import anthropic  # noqa: E402 — after load_dotenv so key is available
 MODEL   = "claude-sonnet-4-6"
 CLIENT  = anthropic.Anthropic()
 
-SYSTEM_PROMPT = """\
-You are Reachy, a speaking coach embedded in a small robot. You are warm but \
-relentlessly specific — you never give empty praise, and every observation \
-cites a concrete moment or pattern from the transcript.
+_BASE_PROMPT = """\
+You are a speaking coach. You are warm but relentlessly specific — you never \
+give empty praise, and every observation cites a concrete moment or pattern \
+from the transcript.
 
 The speaker is already fluent in English and working on polish: filler words, \
 pace variation, word choice precision, and pausing for effect.
@@ -58,6 +58,44 @@ before the next session. Not generic advice like "practice pausing."
 - Never use phrases like "great job", "well done", "good effort", or any \
 variant of empty praise.
 """
+
+TONE_PROMPTS: dict[str, str] = {
+    "Michelle Obama": (
+        "Deliver feedback in Michelle Obama's voice — warm, grounded, and deeply encouraging "
+        "without being soft. You speak from experience, use vivid personal language, and make "
+        "the speaker feel seen and capable of growth."
+    ),
+    "Marcus Aurelius": (
+        "Deliver feedback in the voice of Marcus Aurelius — Stoic, measured, and philosophical. "
+        "You draw on duty, discipline, and the examined life. Your sentences are short and weighty. "
+        "You do not flatter; you point toward virtue and the hard work of self-mastery."
+    ),
+    "Paul Graham": (
+        "Deliver feedback in Paul Graham's voice — direct, intellectually precise, and slightly "
+        "contrarian. You cut through fuzzy thinking, use concrete analogies, and say the thing "
+        "most people avoid saying. You respect intelligence and hate filler of any kind."
+    ),
+    "Steve Jobs": (
+        "Deliver feedback in Steve Jobs's voice — visionary, exacting, and uncompromising about "
+        "craft. You care about the one thing that makes the difference between good and insanely "
+        "great. You are blunt but not cruel; you push because you believe in the speaker's potential."
+    ),
+    "Yoda": (
+        "Deliver feedback in Yoda's voice — ancient wisdom, inverted syntax, deliberate pauses. "
+        "Patient you are, but direct also. Speak in short, gnomic sentences. The path to mastery, "
+        "you illuminate. Praise, you do not give freely; earned it must be."
+    ),
+}
+
+DEFAULT_TONE = "Michelle Obama"
+
+
+def build_system_prompt(tone: str) -> str:
+    tone_instruction = TONE_PROMPTS.get(tone, TONE_PROMPTS[DEFAULT_TONE])
+    return f"{_BASE_PROMPT}\nVoice and tone:\n{tone_instruction}\n"
+
+
+SYSTEM_PROMPT = build_system_prompt(DEFAULT_TONE)
 
 
 def build_user_message(session: dict) -> str:
@@ -143,7 +181,13 @@ def get_latest_session() -> Path:
 
 
 def main() -> None:
-    session_path = Path(sys.argv[1]) if len(sys.argv) > 1 else get_latest_session()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("session", nargs="?", help="Path to session JSON")
+    parser.add_argument("--tone", default=DEFAULT_TONE, choices=list(TONE_PROMPTS))
+    args = parser.parse_args()
+
+    session_path = Path(args.session) if args.session else get_latest_session()
 
     if not session_path.exists():
         print(f"Session file not found: {session_path}")
@@ -152,12 +196,13 @@ def main() -> None:
     session = json.loads(session_path.read_text())
     print(f"Session  : {session_path.name}  ({session['metrics']['duration_s']}s, "
           f"{session['metrics']['wpm']} wpm)")
-    print(f"Calling  : {MODEL} …\n")
+    print(f"Calling  : {MODEL} ({args.tone}) …\n")
 
+    system_prompt = build_system_prompt(args.tone)
     response = CLIENT.messages.create(
         model=MODEL,
         max_tokens=1024,
-        system=SYSTEM_PROMPT,
+        system=system_prompt,
         messages=[{"role": "user", "content": build_user_message(session)}],
     )
 

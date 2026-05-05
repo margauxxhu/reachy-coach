@@ -1,16 +1,13 @@
 #!/bin/bash
-# Creates Speech Coach.app in /Applications — double-click to start a session.
+# Creates Speech Coach.app in /Applications — double-click to launch the UI.
 # Run once: bash create_app.sh
 
 cat > /tmp/speech_coach.applescript << 'EOF'
 on run
-    tell application "Terminal"
-        activate
-        do script "source ~/reachy_mini_env/bin/activate && cd ~/reachy-projects/speech-coach && python capture_audio.py && python analyze.py && python feedback.py"
-    end tell
+    do shell script "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3 /Users/minttymag/reachy-projects/speech-coach/coach_ui.py &"
 end run
 EOF
 
 rm -rf "/Applications/Speech Coach.app"
 osacompile -o "/Applications/Speech Coach.app" /tmp/speech_coach.applescript
-echo "✓ Speech Coach.app created in /Applications — double-click to start a session."
+echo "✓ Speech Coach.app created in /Applications — double-click to launch."

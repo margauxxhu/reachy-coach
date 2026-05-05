@@ -15,6 +15,34 @@ A macOS control panel for an embodied speech coach running on [Reachy Mini Wirel
    - One specific thing to improve (quoting your exact words)
    - A concrete drill to practise before your next session
 
+```mermaid
+flowchart LR
+    A([Start Session]) --> B[Robot mic\nWebRTC · VAD]
+    B --> C[faster-whisper\nword timestamps]
+    C --> D[Metrics\nWPM · fillers · pauses]
+    D --> E[Claude API\nStructured JSON]
+    E --> F[macOS UI\n4 coaching cards]
+    E --> G[Robot TTS\nspoken feedback]
+    E --> H[Discord\noptional]
+```
+
+---
+
+## What the robot does
+
+The robot is an active participant, not a prop.
+
+| Moment | Robot behaviour |
+|---|---|
+| Session start | Head tilts to attentive pose (10° forward), antennas raise upright |
+| While you speak | Nods continuously + antennas waggle in alternating arcs |
+| You pause (0.5 s+) | Stops moving entirely, leans 4° further forward — *"I'm listening, take your time"* |
+| You resume | Nodding and waggle restart immediately |
+| Feedback delivery | Speaks the *improve* and *drill* fields aloud via its own speaker |
+| Throughout | Head tracks your face in real time using MediaPipe (10 Hz, EMA-smoothed) |
+
+The pause reaction is the most deliberate behaviour: a physically still robot during silence signals that the pause is intentional and safe — which is the habit you're building.
+
 ---
 
 ## Project files

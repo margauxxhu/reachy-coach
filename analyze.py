@@ -93,17 +93,21 @@ def _compute(wav_path: str, language: str) -> dict:
     if peak > 0:
         audio = audio / peak * 0.7
 
+    zh_prompt = "请用简体中文转录。" if language == "zh" else None
     segments, _ = model.transcribe(
         audio,
         word_timestamps=True,
         language=language,
         vad_filter=True,
+        initial_prompt=zh_prompt,
     )
     words = [w for seg in segments if seg.words for w in seg.words]
     if not words:
         return {}
 
-    transcript     = " ".join(w.word for w in words).strip()
+    # Chinese tokens must be joined without spaces; other languages use spaces
+    sep        = "" if language == "zh" else " "
+    transcript = sep.join(w.word for w in words).strip()
     total_duration = words[-1].end
     word_count     = len(words)
 

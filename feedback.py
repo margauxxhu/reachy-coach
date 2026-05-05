@@ -231,6 +231,10 @@ def main() -> None:
     )
 
     raw = response.content[0].text.strip()
+    # Strip markdown code fences Claude sometimes adds despite instructions
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        raw = "\n".join(lines[1:-1]).strip()
 
     try:
         feedback = json.loads(raw)

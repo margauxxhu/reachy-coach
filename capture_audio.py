@@ -122,6 +122,7 @@ def main() -> None:
     chunks          = []
     speech_duration = 0.0
     silence_start: float | None = None
+    consec_speech   = 0   # consecutive speech chunks; resets silence timer only after 5 (0.5 s)
     t0              = time.time()
 
     while not stop:
@@ -145,11 +146,16 @@ def main() -> None:
 
         if is_speech:
             speech_duration += chunk_duration
-            silence_start = None
+            consec_speech   += 1
+            # Require 5 consecutive speech chunks (≈0.5 s) before resetting the
+            # silence timer — single noise blips no longer interrupt auto-stop.
+            if consec_speech >= 5:
+                silence_start = None
             if _nod is not None:
                 _nod.set_pause(False)
                 _nod.set_speech(True)
         elif speech_duration >= MIN_SPEECH_BEFORE_STOP:
+            consec_speech = 0
             if silence_start is None:
                 silence_start = time.time()
             elif time.time() - silence_start >= SILENCE_DURATION:
@@ -162,6 +168,7 @@ def main() -> None:
                 in_pause = time.time() - silence_start >= PAUSE_REACTION_DELAY
                 _nod.set_pause(in_pause)
         else:
+            consec_speech = 0
             if _nod is not None:
                 _nod.set_speech(False)
                 _nod.set_pause(False)

@@ -9,6 +9,7 @@ from pathlib import Path
 
 COACH_DIR = Path(__file__).parent
 PYTHON    = Path.home() / "reachy_mini_env/bin/python"
+LOG_FILE  = COACH_DIR / "coach.log"
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 BG       = "#FAF9F7"
@@ -191,7 +192,12 @@ class SpeechCoachApp:
 
     def _run(self, script: str, extra_args: list[str] | None = None) -> bool:
         cmd = [str(PYTHON), str(COACH_DIR / script)] + (extra_args or [])
-        self._proc = subprocess.Popen(cmd, cwd=str(COACH_DIR), stdin=subprocess.DEVNULL)
+        with open(LOG_FILE, "a") as log:
+            self._proc = subprocess.Popen(
+                cmd, cwd=str(COACH_DIR),
+                stdin=subprocess.DEVNULL,
+                stdout=log, stderr=log,
+            )
         self._proc.wait()
         return self._proc.returncode == 0 and not self._stop_flag.is_set()
 

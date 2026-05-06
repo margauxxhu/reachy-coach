@@ -2,13 +2,10 @@
 """
 Stage 3 — Embodied coaching: head orientation, nodding, TTS playback.
 
-Uses WSClient directly (not ReachyMini) so it does NOT trigger
-release_media() on the daemon — that would kill the WebRTC audio
-stream that capture_audio.py is actively reading.
-
-TTS uses push_audio_sample (WebRTC send path), not the daemon's file
-player, so Reachy Mini Control's stop_sound/volume commands cannot
-interrupt it.
+TTS route: generate WAV on Mac with `say`, upload via daemon REST API
+(POST /api/media/sounds/upload), then POST /api/media/play_sound — the
+daemon plays audio locally through its ALSA pipeline on the robot speaker.
+Falls back to Mac speaker if the daemon REST call fails.
 
 Imported by:
   capture_audio.py — connect_head(), orient_head(), EyeContactThread (or NodThread), return_head()
@@ -19,11 +16,14 @@ import logging
 import math
 import os
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.request
+import wave
 
 import numpy as np
+import requests
 from scipy.spatial.transform import Rotation as R
 
 try:
@@ -324,30 +324,78 @@ def speak_feedback(
     host: str = ROBOT_HOST,
     port: int = DAEMON_PORT,
 ) -> None:
-    """Play TTS coaching via Mac speaker while robot nods.
+    """Play TTS through the robot's speaker via daemon REST API, with head nodding.
 
-    The robot's WebRTC daemon only accepts RECEIVE-mode clients; push_audio_sample
-    consistently fails at the signalling level. Playing through the Mac speaker is
-    reliable and keeps the robot head movements intact.
+    The daemon exposes POST /api/media/sounds/upload + POST /api/media/play_sound
+    which plays audio locally through the robot's ALSA pipeline — no WebRTC push
+    required.  Falls back to Mac speaker if the upload or play request fails.
     """
     intro_improve, intro_drill = _FEEDBACK_INTROS.get(language, _FEEDBACK_INTROS["en"])
-    text = f"{intro_improve} {feedback['improve']}. {intro_drill} {feedback['drill']}"
-    voice   = _SAY_VOICES.get(language)
-    say_cmd = ["say"] + (["-v", voice] if voice else []) + ["--", text]
+    text      = f"{intro_improve} {feedback['improve']}. {intro_drill} {feedback['drill']}"
+    voice     = _SAY_VOICES.get(language)
+    say_cmd   = ["say", "-o", "<aiff>"] + (["-v", voice] if voice else []) + ["--", text]
+    daemon    = f"http://{host}:{port}"
 
-    head_client = connect_head(host, port)
-    orient_head(head_client)
+    with tempfile.TemporaryDirectory() as tmp:
+        aiff = os.path.join(tmp, "fb.aiff")
+        wav  = os.path.join(tmp, "fb.wav")
+        # Generate TTS to file
+        subprocess.run(
+            ["say", "-o", aiff] + (["-v", voice] if voice else []) + ["--", text],
+            check=True,
+        )
+        subprocess.run(
+            ["afconvert", "-f", "WAVE", "-d", f"LEI16@{_SAMPLE_RATE}", aiff, wav],
+            check=True,
+        )
+        with wave.open(wav, "r") as wf:
+            duration_s = wf.getnframes() / wf.getframerate()
 
-    nod = NodThread(head_client)
-    nod.start()
-    nod.set_speech(True)
+        # Upload WAV to daemon's temp directory
+        use_robot_speaker = False
+        remote_path = None
+        try:
+            with open(wav, "rb") as f:
+                resp = requests.post(
+                    f"{daemon}/api/media/sounds/upload",
+                    files={"file": ("fb.wav", f, "audio/wav")},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+            remote_path = resp.json()["path"]
+            use_robot_speaker = True
+        except Exception as exc:
+            logging.warning(f"Could not upload TTS to daemon ({exc}); falling back to Mac speaker.")
 
-    # `say` blocks until speech finishes; nod thread runs concurrently.
-    try:
-        subprocess.run(say_cmd, check=True)
-    finally:
-        nod.set_speech(False)
-        nod.stop()
-        nod.join(timeout=1.0)
-        return_head(head_client)
-        head_client.disconnect()
+        head_client = connect_head(host, port)
+        orient_head(head_client)
+        nod = NodThread(head_client)
+        nod.start()
+        nod.set_speech(True)
+
+        try:
+            if use_robot_speaker:
+                requests.post(
+                    f"{daemon}/api/media/play_sound",
+                    json={"file": remote_path},
+                    timeout=10,
+                ).raise_for_status()
+                time.sleep(duration_s + 0.5)
+            else:
+                # Fallback: Mac speaker (say without -o plays directly)
+                subprocess.run(
+                    ["say"] + (["-v", voice] if voice else []) + ["--", text],
+                    check=True,
+                )
+        finally:
+            nod.set_speech(False)
+            nod.stop()
+            nod.join(timeout=1.0)
+            return_head(head_client)
+            head_client.disconnect()
+
+        if remote_path:
+            try:
+                requests.delete(f"{daemon}/api/media/sounds/fb.wav", timeout=5)
+            except Exception:
+                pass

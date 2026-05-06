@@ -335,9 +335,9 @@ def speak_feedback(
     logging.getLogger("reachy_mini.media.webrtc_client_gstreamer").setLevel(logging.CRITICAL)
     logging.getLogger("reachy_mini.media.audio_control_utils").setLevel(logging.CRITICAL)
 
-    head_client = connect_head(host, port)
-    media = MediaManager(backend=MediaBackend.WEBRTC, signalling_host=host)
-
+    # Generate TTS audio BEFORE opening the robot connection.
+    # The robot's WebRTC peer times out (~3 s) if no audio arrives after handshake,
+    # so we must minimise the gap between connect() and the first push_audio_sample().
     with tempfile.TemporaryDirectory() as tmp:
         aiff    = os.path.join(tmp, "fb.aiff")
         wav     = os.path.join(tmp, "fb.wav")
@@ -353,26 +353,26 @@ def speak_feedback(
 
     audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
-    # Orient head (1.5 s) — adds buffer time for the WebRTC send chain
+    # Connect to robot now — orient_head (1.5 s) gives WebRTC time to negotiate
+    # while keeping total idle time to ~2 s before the first audio chunk arrives.
+    head_client = connect_head(host, port)
+    media = MediaManager(backend=MediaBackend.WEBRTC, signalling_host=host)
     orient_head(head_client)
-    time.sleep(0.5)  # brief settle before streaming starts
 
-    # Nod while speaking
     nod = NodThread(head_client)
     nod.start()
     nod.set_speech(True)
 
     # Stream audio to robot speaker via WebRTC in 100 ms chunks at real time.
-    # MediaManager auto-upmixes mono → stereo before handing to GstWebRTCClient.
-    for i in range(0, len(audio), _CHUNK):
-        chunk = audio[i : i + _CHUNK]
-        media.push_audio_sample(chunk)
-        time.sleep(len(chunk) / _SAMPLE_RATE)
-
-    # Cleanup
-    nod.set_speech(False)
-    nod.stop()
-    nod.join(timeout=1.0)
-    return_head(head_client)
-    head_client.disconnect()
-    media.close()
+    try:
+        for i in range(0, len(audio), _CHUNK):
+            chunk = audio[i : i + _CHUNK]
+            media.push_audio_sample(chunk)
+            time.sleep(len(chunk) / _SAMPLE_RATE)
+    finally:
+        nod.set_speech(False)
+        nod.stop()
+        nod.join(timeout=1.0)
+        return_head(head_client)
+        head_client.disconnect()
+        media.close()

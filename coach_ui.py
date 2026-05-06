@@ -191,7 +191,7 @@ class SpeechCoachApp:
 
     def _run(self, script: str, extra_args: list[str] | None = None) -> bool:
         cmd = [str(PYTHON), str(COACH_DIR / script)] + (extra_args or [])
-        self._proc = subprocess.Popen(cmd, cwd=str(COACH_DIR))
+        self._proc = subprocess.Popen(cmd, cwd=str(COACH_DIR), stdin=subprocess.DEVNULL)
         self._proc.wait()
         return self._proc.returncode == 0 and not self._stop_flag.is_set()
 

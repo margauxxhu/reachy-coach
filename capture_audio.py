@@ -174,8 +174,10 @@ def main() -> None:
 
     print()
     media.stop_recording()
-    media.close()
 
+    # Stop the head-control thread before closing media — avoids a race where
+    # EyeContactThread calls get_frame() / mediapipe.detect() concurrently with
+    # media teardown, which can deadlock when run as a subprocess without a TTY.
     if _nod is not None:
         _nod.stop()
         _nod.join(timeout=1.0)
@@ -184,6 +186,8 @@ def main() -> None:
         except Exception:
             pass
         _head_client.disconnect()
+
+    media.close()
 
     if not chunks:
         print("No audio captured.")

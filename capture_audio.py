@@ -43,9 +43,8 @@ WARMUP_S               = 1.5   # seconds to calibrate noise floor before recordi
 
 # Rolling noise-floor estimation
 NOISE_WINDOW_S  = 3.0   # look back this far to estimate the floor
-SPEECH_RATIO    = 6.0   # threshold = noise_floor * this
-                        # raise (e.g. 5.0) if auto-stop fires mid-sentence
-MIN_THRESHOLD   = 0.001 # absolute floor so near-silent rooms still work
+SPEECH_RATIO    = 3.0   # threshold = noise_floor * this (2–3× is typical for VAD)
+MIN_THRESHOLD   = 0.005 # absolute floor so near-silent rooms still work
 
 
 def rms(chunk: np.ndarray) -> float:

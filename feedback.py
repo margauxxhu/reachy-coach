@@ -97,7 +97,9 @@ LANGUAGE_INSTRUCTIONS: dict[str, str] = {
         "using ONLY simplified Chinese characters (简体中文). "
         "Do NOT write in Japanese. Do NOT write in English. "
         "Every single word of what_worked, improve, and drill must be in Chinese. "
-        "所有反馈（what_worked、improve、drill）必须完全用简体中文写，不得使用日文或英文。"
+        "IMPORTANT: When quoting words from the transcript, use Chinese quotation marks "
+        "「」instead of ASCII double-quotes — ASCII quotes inside JSON strings break parsing. "
+        "所有反馈必须用简体中文写。引用原文时使用「」，禁止使用英文引号\"\"。"
     ),
 }
 

@@ -5,3 +5,4 @@ __pycache__/
 recording*.wav
 sessions/
 *.tflite
+coach.log

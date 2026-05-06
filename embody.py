@@ -353,10 +353,13 @@ def speak_feedback(
 
     audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
-    # Connect to robot now — orient_head (1.5 s) gives WebRTC time to negotiate
-    # while keeping total idle time to ~2 s before the first audio chunk arrives.
+    # Connect to robot now — start_recording() establishes the full bidirectional
+    # WebRTC session the daemon requires; without it the signalling WebSocket closes
+    # immediately with "receiver is gone".  orient_head (1.5 s) gives the session
+    # time to negotiate before the first audio chunk arrives.
     head_client = connect_head(host, port)
     media = MediaManager(backend=MediaBackend.WEBRTC, signalling_host=host)
+    media.start_recording()
     orient_head(head_client)
 
     nod = NodThread(head_client)
@@ -375,4 +378,5 @@ def speak_feedback(
         nod.join(timeout=1.0)
         return_head(head_client)
         head_client.disconnect()
+        media.stop_recording()
         media.close()

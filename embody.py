@@ -309,7 +309,7 @@ class EyeContactThread(threading.Thread):
 # ── TTS ───────────────────────────────────────────────────────────────────────
 
 # macOS voices per language — must be installed on the system
-_SAY_VOICES = {"en": None, "fr": "Thomas", "zh": "Ting-Ting"}
+_SAY_VOICES = {"en": None, "fr": "Thomas", "zh": "Tingting"}
 
 _FEEDBACK_INTROS = {
     "en": ("What to improve.", "Your drill."),

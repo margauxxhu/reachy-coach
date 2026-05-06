@@ -119,11 +119,11 @@ def main() -> None:
 
     print(f"Recording …  (Ctrl+C or {SILENCE_DURATION:.0f} s of silence to stop)\n")
 
-    chunks          = []
-    speech_duration = 0.0
-    silence_start: float | None = None
-    consec_speech   = 0   # consecutive speech chunks; resets silence timer only after 5 (0.5 s)
-    t0              = time.time()
+    chunks              = []
+    speech_duration     = 0.0
+    silence_accumulated = 0.0   # cumulative non-speech time after min speech reached
+    consec_speech       = 0     # consecutive speech chunks
+    t0                  = time.time()
 
     while not stop:
         chunk = media.get_audio_sample()
@@ -132,12 +132,11 @@ def main() -> None:
             continue
 
         chunks.append(chunk.copy())
-        level         = rms(chunk)
+        level          = rms(chunk)
         chunk_duration = len(chunk) / SAMPLE_RATE
-        elapsed       = time.time() - t0
+        elapsed        = time.time() - t0
 
         # Rolling noise floor: 20th percentile of recent levels.
-        # Quiet moments (pauses, room noise) anchor the floor; speech spikes above it.
         noise_deque.append(level)
         noise_floor       = float(np.percentile(noise_deque, 20))
         silence_threshold = max(MIN_THRESHOLD, noise_floor * SPEECH_RATIO)
@@ -147,36 +146,39 @@ def main() -> None:
         if is_speech:
             speech_duration += chunk_duration
             consec_speech   += 1
-            # Require 5 consecutive speech chunks (≈0.5 s) before resetting the
-            # silence timer — single noise blips no longer interrupt auto-stop.
-            if consec_speech >= 5:
-                silence_start = None
+            # 1.5 s of sustained speech resets the silence accumulator.
+            # Brief ambient blips (< 1.5 s) do not reset it.
+            if consec_speech >= 15:
+                silence_accumulated = 0.0
             if _nod is not None:
                 _nod.set_pause(False)
                 _nod.set_speech(True)
         elif speech_duration >= MIN_SPEECH_BEFORE_STOP:
-            consec_speech = 0
-            if silence_start is None:
-                silence_start = time.time()
-            elif time.time() - silence_start >= SILENCE_DURATION:
+            consec_speech        = 0
+            silence_accumulated += chunk_duration
+            if silence_accumulated >= SILENCE_DURATION:
                 if _nod is not None:
                     _nod.set_pause(False)
                 print(f"\nAuto-stopped: {SILENCE_DURATION:.0f} s of silence.")
                 break
             if _nod is not None:
                 _nod.set_speech(False)
-                in_pause = time.time() - silence_start >= PAUSE_REACTION_DELAY
-                _nod.set_pause(in_pause)
+                _nod.set_pause(silence_accumulated >= PAUSE_REACTION_DELAY)
         else:
             consec_speech = 0
             if _nod is not None:
                 _nod.set_speech(False)
                 _nod.set_pause(False)
 
-        # Meter scaled relative to live threshold; floor line at 8 bars
+        # Meter: show silence countdown once speech minimum is reached
         bar = "█" * min(40, int(level / silence_threshold * 8))
         tag = "SPEECH" if is_speech else "quiet "
-        print(f"\r  {elapsed:5.1f}s  {tag}  {bar:<40}  floor={noise_floor:.4f}", end="", flush=True)
+        if speech_duration >= MIN_SPEECH_BEFORE_STOP and not is_speech:
+            extra = f"  stop in {max(0, SILENCE_DURATION - silence_accumulated):.1f}s"
+        else:
+            extra = f"  spch={speech_duration:.1f}s"
+        print(f"\r  {elapsed:5.1f}s  {tag}  {bar:<40}  floor={noise_floor:.4f}{extra}",
+              end="", flush=True)
 
     print()
     media.stop_recording()

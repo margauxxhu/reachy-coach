@@ -311,41 +311,39 @@ class EyeContactThread(threading.Thread):
 
 # ── TTS ───────────────────────────────────────────────────────────────────────
 
+# macOS voices per language — must be installed on the system
+_SAY_VOICES = {"en": None, "fr": "Thomas", "zh": "Ting-Ting"}
+
+_FEEDBACK_INTROS = {
+    "en": ("What to improve.", "Your drill."),
+    "fr": ("Ce qu'il faut améliorer.", "Votre exercice."),
+    "zh": ("需要改进的地方。", "你的练习。"),
+}
+
+
 def speak_feedback(
     feedback: dict,
+    language: str = "en",
     host: str = ROBOT_HOST,
     port: int = DAEMON_PORT,
 ) -> None:
-    """Stream TTS to the robot's speaker via WebRTC, with head nodding.
-
-    Speaks only 'improve' and 'drill' — skips 'what_worked'.
-
-    Uses push_audio_sample (WebRTC audio send path) instead of the
-    daemon's file player, so Reachy Mini Control volume/stop commands
-    cannot interrupt playback.
-
-    feedback: dict with keys improve, drill (what_worked is intentionally skipped)
-    """
-    text = (
-        f"What to improve. {feedback['improve']}. "
-        f"Your drill. {feedback['drill']}"
-    )
+    """Stream TTS to the robot's speaker via WebRTC, with head nodding."""
+    intro_improve, intro_drill = _FEEDBACK_INTROS.get(language, _FEEDBACK_INTROS["en"])
+    text = f"{intro_improve} {feedback['improve']}. {intro_drill} {feedback['drill']}"
 
     # Suppress GStreamer noise from the WebRTC setup
     logging.getLogger("reachy_mini.media.webrtc_client_gstreamer").setLevel(logging.CRITICAL)
     logging.getLogger("reachy_mini.media.audio_control_utils").setLevel(logging.CRITICAL)
 
-    # Start WebRTC negotiation and head connection simultaneously.
-    # Audio generation (say + afconvert + orient_head) takes ~4–5 s total,
-    # which is enough time for the WebRTC send chain to become ready.
     head_client = connect_head(host, port)
     media = MediaManager(backend=MediaBackend.WEBRTC, signalling_host=host)
 
-    # Generate TTS audio while WebRTC negotiates in the background
     with tempfile.TemporaryDirectory() as tmp:
-        aiff = os.path.join(tmp, "fb.aiff")
-        wav  = os.path.join(tmp, "fb.wav")
-        subprocess.run(["say", "-o", aiff, "--", text], check=True)
+        aiff    = os.path.join(tmp, "fb.aiff")
+        wav     = os.path.join(tmp, "fb.wav")
+        voice   = _SAY_VOICES.get(language)
+        say_cmd = ["say", "-o", aiff] + (["-v", voice] if voice else []) + ["--", text]
+        subprocess.run(say_cmd, check=True)
         subprocess.run(
             ["afconvert", "-f", "WAVE", "-d", f"LEI16@{_SAMPLE_RATE}", aiff, wav],
             check=True,

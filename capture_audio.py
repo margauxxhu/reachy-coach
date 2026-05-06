@@ -39,6 +39,7 @@ OUTPUT_FILE = sys.argv[1] if len(sys.argv) > 1 else "recording.wav"
 SILENCE_DURATION       = 3.0   # seconds of quiet → auto-stop
 MIN_SPEECH_BEFORE_STOP = 2.0   # don't auto-stop until this much speech has accumulated
 PAUSE_REACTION_DELAY   = 0.5   # seconds of silence before lean-in activates
+WARMUP_S               = 1.5   # seconds to calibrate noise floor before recording starts
 
 # Rolling noise-floor estimation
 NOISE_WINDOW_S  = 3.0   # look back this far to estimate the floor
@@ -106,16 +107,23 @@ def main() -> None:
             _head_client = None
             _nod         = None
 
+    # ── Warm-up: calibrate noise floor while the user is still quiet ─────────
+    noise_deque: deque[float] = deque(maxlen=int(NOISE_WINDOW_S * 50))
+    print(f"Calibrating … (stay quiet for {WARMUP_S:.0f} s)")
+    warmup_end = time.time() + WARMUP_S
+    while time.time() < warmup_end and not stop:
+        chunk = media.get_audio_sample()
+        if chunk is not None:
+            noise_deque.append(rms(chunk))
+        else:
+            time.sleep(0.01)
+
     print(f"Recording …  (Ctrl+C or {SILENCE_DURATION:.0f} s of silence to stop)\n")
 
-    chunks        = []
+    chunks          = []
     speech_duration = 0.0
     silence_start: float | None = None
-    t0            = time.time()
-
-    # Rolling window: keep ~NOISE_WINDOW_S worth of per-chunk RMS values.
-    # ~50 chunks/s is a rough estimate; deque auto-discards the oldest.
-    noise_deque: deque[float] = deque(maxlen=int(NOISE_WINDOW_S * 50))
+    t0              = time.time()
 
     while not stop:
         chunk = media.get_audio_sample()

@@ -261,7 +261,7 @@ def main() -> None:
     try:
         import embody
         print("Speaking improve + drill via robot speaker …")
-        embody.speak_feedback(feedback)
+        embody.speak_feedback(feedback, language=language)
     except Exception as exc:
         print(f"TTS skipped: {exc}")
 

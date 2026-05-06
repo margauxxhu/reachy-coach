@@ -148,7 +148,7 @@ def main() -> None:
             consec_speech   += 1
             # 1.5 s of sustained speech resets the silence accumulator.
             # Brief ambient blips (< 1.5 s) do not reset it.
-            if consec_speech >= 15:
+            if consec_speech >= 8:
                 silence_accumulated = 0.0
             if _nod is not None:
                 _nod.set_pause(False)

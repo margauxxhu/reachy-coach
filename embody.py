@@ -19,11 +19,9 @@ import logging
 import math
 import os
 import subprocess
-import tempfile
 import threading
 import time
 import urllib.request
-import wave
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -55,7 +53,6 @@ except (ImportError, Exception):
 
 from reachy_mini.io.protocol import GotoTaskRequest, SetFullTargetCmd
 from reachy_mini.io.ws_client import WSClient
-from reachy_mini.media.media_manager import MediaBackend, MediaManager
 from reachy_mini.utils.interpolation import InterpolationTechnique
 
 ROBOT_HOST  = "reachy-mini.local"
@@ -327,79 +324,30 @@ def speak_feedback(
     host: str = ROBOT_HOST,
     port: int = DAEMON_PORT,
 ) -> None:
-    """Stream TTS to the robot's speaker via WebRTC, with head nodding."""
+    """Play TTS coaching via Mac speaker while robot nods.
+
+    The robot's WebRTC daemon only accepts RECEIVE-mode clients; push_audio_sample
+    consistently fails at the signalling level. Playing through the Mac speaker is
+    reliable and keeps the robot head movements intact.
+    """
     intro_improve, intro_drill = _FEEDBACK_INTROS.get(language, _FEEDBACK_INTROS["en"])
     text = f"{intro_improve} {feedback['improve']}. {intro_drill} {feedback['drill']}"
-
-    # Suppress GStreamer noise from the WebRTC setup
-    logging.getLogger("reachy_mini.media.webrtc_client_gstreamer").setLevel(logging.CRITICAL)
-    logging.getLogger("reachy_mini.media.audio_control_utils").setLevel(logging.CRITICAL)
-
-    # Generate TTS audio BEFORE opening the robot connection.
-    # The robot's WebRTC peer times out (~3 s) if no audio arrives after handshake,
-    # so we must minimise the gap between connect() and the first push_audio_sample().
-    with tempfile.TemporaryDirectory() as tmp:
-        aiff    = os.path.join(tmp, "fb.aiff")
-        wav     = os.path.join(tmp, "fb.wav")
-        voice   = _SAY_VOICES.get(language)
-        say_cmd = ["say", "-o", aiff] + (["-v", voice] if voice else []) + ["--", text]
-        subprocess.run(say_cmd, check=True)
-        subprocess.run(
-            ["afconvert", "-f", "WAVE", "-d", f"LEI16@{_SAMPLE_RATE}", aiff, wav],
-            check=True,
-        )
-        with wave.open(wav, "r") as wf:
-            raw = wf.readframes(wf.getnframes())
-
-    audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    voice   = _SAY_VOICES.get(language)
+    say_cmd = ["say"] + (["-v", voice] if voice else []) + ["--", text]
 
     head_client = connect_head(host, port)
-    media = MediaManager(backend=MediaBackend.WEBRTC, signalling_host=host)
-    media.start_recording()
-
-    # The robot's GstWebRTCSrc (receive) pipeline drops the signalling connection
-    # if nobody drains incoming audio — the same failure mode that would happen in
-    # capture_audio.py if get_audio_sample() were never called.
-    # Fix: wait for the first incoming sample (proves the session is live), then
-    # drain in a background thread for the duration of TTS playback.
-    deadline = time.time() + 10.0
-    while time.time() < deadline:
-        if media.get_audio_sample() is not None:
-            break
-        time.sleep(0.05)
-    else:
-        media.stop_recording()
-        media.close()
-        head_client.disconnect()
-        raise RuntimeError("WebRTC audio stream not established within 10 s")
-
-    _drain_stop = threading.Event()
-    def _drain():
-        while not _drain_stop.is_set():
-            media.get_audio_sample()
-            time.sleep(0.02)
-    drain_thread = threading.Thread(target=_drain, daemon=True)
-    drain_thread.start()
-
     orient_head(head_client)
 
     nod = NodThread(head_client)
     nod.start()
     nod.set_speech(True)
 
-    # Stream audio to robot speaker via WebRTC in 100 ms chunks at real time.
+    # `say` blocks until speech finishes; nod thread runs concurrently.
     try:
-        for i in range(0, len(audio), _CHUNK):
-            chunk = audio[i : i + _CHUNK]
-            media.push_audio_sample(chunk)
-            time.sleep(len(chunk) / _SAMPLE_RATE)
+        subprocess.run(say_cmd, check=True)
     finally:
-        _drain_stop.set()
-        drain_thread.join(timeout=1.0)
         nod.set_speech(False)
         nod.stop()
         nod.join(timeout=1.0)
         return_head(head_client)
         head_client.disconnect()
-        media.stop_recording()
-        media.close()

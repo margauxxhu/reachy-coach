@@ -353,13 +353,34 @@ def speak_feedback(
 
     audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
-    # Connect to robot now — start_recording() establishes the full bidirectional
-    # WebRTC session the daemon requires; without it the signalling WebSocket closes
-    # immediately with "receiver is gone".  orient_head (1.5 s) gives the session
-    # time to negotiate before the first audio chunk arrives.
     head_client = connect_head(host, port)
     media = MediaManager(backend=MediaBackend.WEBRTC, signalling_host=host)
     media.start_recording()
+
+    # The robot's GstWebRTCSrc (receive) pipeline drops the signalling connection
+    # if nobody drains incoming audio — the same failure mode that would happen in
+    # capture_audio.py if get_audio_sample() were never called.
+    # Fix: wait for the first incoming sample (proves the session is live), then
+    # drain in a background thread for the duration of TTS playback.
+    deadline = time.time() + 10.0
+    while time.time() < deadline:
+        if media.get_audio_sample() is not None:
+            break
+        time.sleep(0.05)
+    else:
+        media.stop_recording()
+        media.close()
+        head_client.disconnect()
+        raise RuntimeError("WebRTC audio stream not established within 10 s")
+
+    _drain_stop = threading.Event()
+    def _drain():
+        while not _drain_stop.is_set():
+            media.get_audio_sample()
+            time.sleep(0.02)
+    drain_thread = threading.Thread(target=_drain, daemon=True)
+    drain_thread.start()
+
     orient_head(head_client)
 
     nod = NodThread(head_client)
@@ -373,6 +394,8 @@ def speak_feedback(
             media.push_audio_sample(chunk)
             time.sleep(len(chunk) / _SAMPLE_RATE)
     finally:
+        _drain_stop.set()
+        drain_thread.join(timeout=1.0)
         nod.set_speech(False)
         nod.stop()
         nod.join(timeout=1.0)

@@ -125,7 +125,7 @@ class SpeechCoachApp:
 
         tk.Label(selectors_row, text="Coach voice", bg=BG, fg=T2,
                  font=F_LABEL).pack(side="left", padx=(20, 8))
-        self._tone_var = tk.StringVar(value="Michelle Obama")
+        self._tone_var = tk.StringVar(value="Yoda")
         _menu(selectors_row, self._tone_var,
               ["Michelle Obama", "Marcus Aurelius", "Paul Graham", "Steve Jobs", "Yoda"]).pack(side="left")
 

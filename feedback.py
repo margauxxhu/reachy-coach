@@ -87,7 +87,7 @@ TONE_PROMPTS: dict[str, str] = {
     ),
 }
 
-DEFAULT_TONE = "Michelle Obama"
+DEFAULT_TONE = "Yoda"
 
 LANGUAGE_INSTRUCTIONS: dict[str, str] = {
     "en": "Write your feedback in English.",

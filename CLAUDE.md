@@ -50,7 +50,7 @@ progress.py        Session history viewer.
 Note: zh feedback must use `「」` quotation marks — ASCII `"` inside JSON strings breaks parsing.
 
 ## Coach voices (--tone)
-Default: Michelle Obama. Options: Michelle Obama, Marcus Aurelius, Paul Graham, Steve Jobs, Yoda.
+Default: Yoda. Options: Michelle Obama, Marcus Aurelius, Paul Graham, Steve Jobs, Yoda.
 Selectable per session in the app UI dropdown; passed as `--tone` flag to feedback.py.
 
 ## App bundle
